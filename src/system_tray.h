@@ -148,8 +148,7 @@ namespace system_tray {
   /**
    * @brief Show an update notification for an unsupported Virtual HID Broker.
    *
-   * Existing notifications are preserved when gamepad input is disabled, the broker is absent or supported,
-   * or the Windows backend choice does not use the broker.
+   * Existing notifications are preserved when the broker is absent or supported.
    *
    * @param installed Whether the broker is installed.
    * @param version Installed broker version.

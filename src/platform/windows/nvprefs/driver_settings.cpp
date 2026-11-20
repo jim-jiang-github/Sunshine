@@ -10,8 +10,13 @@
 
 namespace {
 
+#ifdef SUNSHINE_EMBEDDED
+  const auto sunshine_application_profile_name = L"SolunaRemote";
+  const auto sunshine_application_path = L"solunaremote.exe";
+#else
   const auto sunshine_application_profile_name = L"SunshineStream";
   const auto sunshine_application_path = L"sunshine.exe";
+#endif
 
   void nvapi_error_message(NvAPI_Status status) {
     NvAPI_ShortString message = {};

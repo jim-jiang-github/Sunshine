@@ -226,8 +226,6 @@ namespace confighttp {
 #ifdef __APPLE__
   constexpr std::string_view libvirtualhid_macos_minimum_version = LIBVIRTUALHID_MACOS_MINIMUM_VERSION;  ///< Minimum supported macOS broker bundle version.
 #endif
-  constexpr auto VIGEMBUS_MINIMUM_VERSION = "1.17.0.0"sv;  ///< Minimum supported ViGEmBus fallback driver version.  // NOSONAR(cpp:S1313): not an IP address
-
   /**
    * @brief Parse one dotted driver-version component.
    *
@@ -949,6 +947,7 @@ namespace confighttp {
   }
 
   void getFallbackPage(const resp_https_t &response, const req_https_t &request) {
+#if SUNSHINE_ENABLE_WEB_UI
     const std::string_view path = request->path;
     const auto has_server_prefix = [path](const std::string_view prefix) {
       return path == prefix || (path.starts_with(prefix) && path.length() > prefix.length() && path[prefix.length()] == '/');
@@ -960,6 +959,9 @@ namespace confighttp {
     }
 
     getPage(response, request);
+#else
+    not_found(response);
+#endif
   }
 
   /**
@@ -2208,7 +2210,7 @@ namespace confighttp {
         const auto &capabilities = runtime->capabilities();
         backend_name = capabilities.backend_name;
         requires_installed_driver = capabilities.requires_installed_driver;
-        output_tree = build_driver_status(driver_detected || capabilities.supports_gamepad, version_str, minimum_version);
+        output_tree = build_driver_status(driver_detected || capabilities.supports_keyboard || capabilities.supports_mouse, version_str, minimum_version);
       }
     } catch (const std::bad_alloc &exception) {
       runtime_error_message = exception.what();
@@ -2230,35 +2232,6 @@ namespace confighttp {
   }
 
   /**
-   * @brief Build ViGEmBus fallback driver version and installation status.
-   *
-   * @return ViGEmBus fallback driver status JSON.
-   */
-  nlohmann::json get_vigembus_driver_status() {
-#ifdef _WIN32
-    std::string version_str;
-
-    // Check if ViGEmBus driver exists
-    std::string system_root;
-    if (!lizardbyte::common::get_env("SystemRoot", system_root)) {
-      system_root = "C:\\Windows";
-    }
-    const std::filesystem::path driver_path = std::filesystem::path(system_root) / "System32" / "drivers" / "ViGEmBus.sys";
-    const auto installed = std::filesystem::exists(driver_path);
-    if (installed) {
-      platf::getFileVersionInfo(driver_path, version_str);
-    }
-
-    auto output_tree = build_driver_status(installed, version_str, VIGEMBUS_MINIMUM_VERSION);
-#else
-    auto output_tree = build_driver_status(false, "", VIGEMBUS_MINIMUM_VERSION);
-    output_tree["error"] = "ViGEmBus is only available on Windows";
-#endif
-
-    return output_tree;
-  }
-
-  /**
    * @brief Get virtual input driver version and installation status.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2274,7 +2247,6 @@ namespace confighttp {
 
     nlohmann::json output_tree;
     output_tree["virtualhid"] = get_virtualhid_driver_status();
-    output_tree["vigembus"] = get_vigembus_driver_status();
     send_response(response, output_tree);
   }
 
@@ -2339,9 +2311,6 @@ namespace confighttp {
         return;
       }
 
-#ifdef _WIN32
-      config::select_all_gamepad_drivers_if_licensed(result.license.licensed());
-#endif
 #if (defined(_WIN32) || defined(__APPLE__)) && defined(SUNSHINE_TRAY) && SUNSHINE_TRAY >= 1
       system_tray::update_tray_virtualhid_license(result.license, false);
 #endif
@@ -2556,11 +2525,13 @@ namespace confighttp {
     https_server_t server {config::nvhttp.cert, config::nvhttp.pkey};
 
     // Helper to create SPA entry handlers without repeating the signature
+#if SUNSHINE_ENABLE_WEB_UI
     auto page_handler = [](bool require_auth = true, bool redirect_if_username = false) {
       return [require_auth, redirect_if_username](const resp_https_t &response, const req_https_t &request) {
         getPage(response, request, require_auth, redirect_if_username);
       };
     };
+#endif
 
     // Unsupported methods use the common HTTP handler signature and do not inspect the request.
     const https_handler_t bad_request_handler = [](const resp_https_t &response, const req_https_t &) {
@@ -2574,8 +2545,10 @@ namespace confighttp {
     server.default_resource["GET"] = getFallbackPage;
 
     // Public SPA routes with authentication behavior that differs from the default fallback
+#if SUNSHINE_ENABLE_WEB_UI
     server.resource["^/logout/?$"]["GET"] = page_handler(false);
     server.resource["^/welcome/?$"]["GET"] = page_handler(false, true);
+#endif
 
     // rest api
     server.resource["^/api/browse$"]["GET"] = browseDirectory;
@@ -2608,9 +2581,11 @@ namespace confighttp {
     server.resource["^/api/virtual-input/status$"]["GET"] = getVirtualInputStatus;
 
     // static/dynamic resources
+#if SUNSHINE_ENABLE_WEB_UI
     server.resource["^/images/sunshine.ico$"]["GET"] = getFaviconImage;
     server.resource["^/images/logo-sunshine-45.png$"]["GET"] = getSunshineLogoImage;
     server.resource["^/assets\\/.+$"]["GET"] = getAsset;
+#endif
 
     server.config.reuse_address = true;
     server.config.address = net::get_bind_address(address_family);
@@ -2622,7 +2597,7 @@ namespace confighttp {
       try {
         platf::set_thread_name("confighttp::tcp");
         https_server->start([&display_addr](const unsigned short port) {
-          BOOST_LOG(info) << "Configuration UI available at [https://"sv << display_addr << ":" << port << "]";
+          BOOST_LOG(info) << "HTTPS management API available at [https://"sv << display_addr << ":" << port << "]";
         });
       } catch (boost::system::system_error &err) {
         // It's possible the exception gets thrown after calling server->stop() from a different thread

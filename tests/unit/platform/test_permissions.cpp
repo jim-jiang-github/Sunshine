@@ -76,7 +76,7 @@ TEST(PlatformPermissionsTest, UnixInputStatusMatchesVirtualInputDeviceAccess) {
   ASSERT_EQ(permissions.size(), 1U);
   EXPECT_EQ(permissions.front().id, "input");
   EXPECT_EQ(permissions.front().status, input_access ? "granted" : "denied");
-  EXPECT_EQ(permissions.front().required, config::input.keyboard || config::input.mouse || config::input.controller);
+  EXPECT_EQ(permissions.front().required, config::input.keyboard || config::input.mouse);
   EXPECT_FALSE(permissions.front().requestable);
   EXPECT_FALSE(platf::request_permission("input"));
 }

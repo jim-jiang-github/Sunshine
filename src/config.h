@@ -39,11 +39,6 @@ namespace config {
   constexpr int PACKETSIZE_SMALL = 500;  ///< Conservative packet size used for low-MTU links.
   constexpr int PACKETSIZE_LARGE = 1456;  ///< Default large packet size that avoids common MTU fragmentation.
 
-  inline constexpr std::string_view GAMEPAD_DRIVER_ALL = "all";  ///< Allow every available Windows virtual gamepad driver.
-  inline constexpr std::string_view GAMEPAD_DRIVER_VIRTUALHID = "virtualhid";  ///< Use Virtual HID Broker for gamepads on Windows or macOS.
-  inline constexpr std::string_view GAMEPAD_DRIVER_VIGEMBUS = "vigembus";  ///< Allow only ViGEmBus for Windows gamepads.
-  inline constexpr std::string_view GAMEPAD_DRIVER_NONE = "none";  ///< Disable virtual gamepads on Windows and macOS.
-
   // track modified config options
   inline config_map_t modified_config_settings;  ///< Configuration keys changed during the current parse or UI update.
 
@@ -301,21 +296,12 @@ namespace config {
   struct input_t {
     std::unordered_map<int, int> keybindings;  ///< Client keycode to platform keycode bindings.
 
-    std::chrono::milliseconds back_button_timeout;  ///< Hold duration that turns a controller Back button into a special action.
     std::chrono::milliseconds key_repeat_delay;  ///< Delay before repeating a held keyboard key.
     std::chrono::duration<double> key_repeat_period;  ///< Interval between repeated keyboard key events.
-
-    std::string gamepad;  ///< Virtual controller profile selected by configuration.
-    std::string gamepad_driver;  ///< Virtual gamepad backend policy on Windows and macOS.
-    bool ds4_back_as_touchpad_click;  ///< Map Back/Select to touchpad click for PlayStation-style gamepads.
-    bool motion_as_ds4;  ///< Prefer PlayStation-style emulation for client gamepads with motion controls.
-    bool touchpad_as_ds4;  ///< Prefer PlayStation-style emulation for client gamepads with touchpad input.
-    bool virtualhid_randomize_mac;  ///< Randomize the libvirtualhid virtual controller MAC address.
 
     bool keyboard;  ///< Enable keyboard input from clients.
     bool key_rightalt_to_key_win;  ///< Map the client Right Alt key to the Windows key.
     bool mouse;  ///< Enable mouse input from clients.
-    bool controller;  ///< Enable controller input from clients.
 
     bool always_send_scancodes;  ///< Always send keyboard scancodes when available.
 
@@ -441,26 +427,6 @@ namespace config {
    * @return Parsed configuration key-value entries.
    */
   config_map_t parse_config(const std::string_view &file_content);
-
-  /**
-   * @brief Persist a configuration option when the active file does not already define it.
-   *
-   * Existing text and comments are retained because the new setting is appended rather
-   * than serializing the complete configuration again.
-   *
-   * @param name Configuration option name.
-   * @param value Configuration option value.
-   * @return True when the option was appended successfully; otherwise, false.
-   */
-  bool persist_config_option_if_missing(std::string_view name, std::string_view value);
-
-  /**
-   * @brief Select all available gamepad drivers when a licensed user has not made a choice.
-   *
-   * @param virtualhid_licensed Whether Virtual HID Driver has an active machine license.
-   * @return True when the `all` preference was persisted and applied; otherwise, false.
-   */
-  bool select_all_gamepad_drivers_if_licensed(bool virtualhid_licensed);
 
   /**
    * @brief Apply the configured stream resolution cap to a client-requested resolution.

@@ -59,10 +59,6 @@ TEST(ConfigParsingTest, DuplicateKeysPreserveFirstValueAfterIgnoredEmptyEntry) {
   EXPECT_EQ(entries.size(), 2);
 }
 
-TEST(ConfigDefaultsTest, UsesAutomaticGamepadSelection) {
-  EXPECT_EQ(config::input.gamepad, "auto");
-}
-
 TEST(ConfigDefaultsTest, TreatsFp16SdrCapturesAsLinear) {
   EXPECT_FALSE(config::video.fp16_sdr_gamma_encoded);
 }
@@ -119,13 +115,10 @@ namespace {
      */
     void SetUp() override {
       original_config_file_ = config::sunshine.config_file;
-      original_gamepad_driver_ = config::input.gamepad_driver;
-      original_gamepad_ = config::input.gamepad;
       original_apps_file_ = config::stream.file_apps;
       config_file_ = std::filesystem::temp_directory_path() / "sunshine_test_config_persistence.conf";  // NOSONAR(cpp:S5443): safe for tests
       std::filesystem::remove(config_file_);
       config::sunshine.config_file = config_file_.string();
-      config::input.gamepad_driver.clear();
     }
 
     /**
@@ -133,8 +126,6 @@ namespace {
      */
     void TearDown() override {
       config::sunshine.config_file = std::move(original_config_file_);
-      config::input.gamepad_driver = std::move(original_gamepad_driver_);
-      config::input.gamepad = std::move(original_gamepad_);
       config::stream.file_apps = std::move(original_apps_file_);
       std::filesystem::remove(config_file_.parent_path() / "sunshine_test_config_apps.json");
       std::filesystem::remove(config_file_);
@@ -152,61 +143,10 @@ namespace {
   private:
     std::filesystem::path config_file_;  ///< Temporary configuration file used by the test.
     std::string original_config_file_;  ///< Active configuration path restored after each test.
-    std::string original_gamepad_driver_;  ///< Gamepad driver preference restored after each test.
-    std::string original_gamepad_;  ///< Gamepad profile restored after each test.
     std::string original_apps_file_;  ///< Applications file path restored after each test.
   };
 
 }  // namespace
-
-TEST_F(ConfigPersistenceTest, AppendsMissingOptionWithoutReplacingExistingText) {
-  ASSERT_EQ(file_handler::write_file(config_file().string().c_str(), "# retained comment"), 0);
-
-  EXPECT_TRUE(config::persist_config_option_if_missing("gamepad_driver", "all"));
-  EXPECT_EQ(
-    file_handler::read_file(config_file().string().c_str()),
-    "# retained comment\ngamepad_driver = all\n"
-  );
-
-  EXPECT_FALSE(config::persist_config_option_if_missing("gamepad_driver", "virtualhid"));
-  EXPECT_EQ(
-    file_handler::read_file(config_file().string().c_str()),
-    "# retained comment\ngamepad_driver = all\n"
-  );
-}
-
-TEST_F(ConfigPersistenceTest, DoesNotReplaceAnExistingOption) {
-  ASSERT_EQ(file_handler::write_file(config_file().string().c_str(), "gamepad_driver = vigembus\n"), 0);
-
-  EXPECT_FALSE(config::persist_config_option_if_missing("gamepad_driver", "all"));
-  EXPECT_EQ(file_handler::read_file(config_file().string().c_str()), "gamepad_driver = vigembus\n");
-}
-
-TEST_F(ConfigPersistenceTest, SelectsAllDriversOnlyForLicensedUsersWithoutAPreference) {
-  EXPECT_FALSE(config::select_all_gamepad_drivers_if_licensed(false));
-  EXPECT_TRUE(config::input.gamepad_driver.empty());
-  EXPECT_TRUE(file_handler::read_file(config_file().string().c_str()).empty());
-
-  EXPECT_TRUE(config::select_all_gamepad_drivers_if_licensed(true));
-  EXPECT_EQ(config::input.gamepad_driver, config::GAMEPAD_DRIVER_ALL);
-  EXPECT_EQ(file_handler::read_file(config_file().string().c_str()), "gamepad_driver = all\n");
-
-  EXPECT_FALSE(config::select_all_gamepad_drivers_if_licensed(true));
-  EXPECT_EQ(file_handler::read_file(config_file().string().c_str()), "gamepad_driver = all\n");
-}
-
-TEST_F(ConfigPersistenceTest, AcceptsAllGamepadProfilesAcrossRepeatedConfigurationChanges) {
-  const auto apps_file = config_file().parent_path() / "sunshine_test_config_apps.json";
-  ASSERT_EQ(file_handler::write_file(apps_file.string().c_str(), "{}"), 0);
-  config::stream.file_apps = apps_file.string();
-
-  constexpr std::array profiles {"generic"sv, "x360"sv, "xone"sv, "xseries"sv, "ds4"sv, "ds5"sv, "switch"sv};
-  for (const auto profile : profiles) {
-    config::input.gamepad = "auto";
-    config::apply_config_for_test(std::string {"gamepad = "} + std::string {profile} + "\n");
-    EXPECT_EQ(config::input.gamepad, profile);
-  }
-}
 
 TEST_F(ConfigPersistenceTest, ParsesFp16SdrGammaEncodedOption) {
   const auto apps_file = config_file().parent_path() / "sunshine_test_config_apps.json";

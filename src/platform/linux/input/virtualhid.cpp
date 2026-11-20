@@ -5,7 +5,6 @@
 
 // standard includes
 #include <memory>
-#include <utility>
 
 // platform includes
 #ifdef SUNSHINE_BUILD_X11
@@ -28,10 +27,6 @@ namespace platf {
     if (const auto &capabilities = runtime->capabilities(); config::input.native_pen_touch && (capabilities.supports_touchscreen || capabilities.supports_pen_tablet)) {
       caps |= platform_caps::pen_touch;
     }
-    if (virtualhid::configured_gamepad_supports_controller_extensions()) {
-      caps |= platform_caps::controller_touch;
-    }
-
     return caps;
   }
 
@@ -66,14 +61,4 @@ namespace platf {
 #endif
   }
 
-  std::vector<supported_gamepad_t> &supported_gamepads(input_t *input) {
-    static std::vector<supported_gamepad_t> gamepads;
-    if (!input || !input->get()) {
-      gamepads = virtualhid::static_supported_gamepads();
-      return gamepads;
-    }
-
-    gamepads = virtualhid::supported_gamepads(virtualhid::get_input_context(*input).runtime.get());
-    return gamepads;
-  }
 }  // namespace platf

@@ -161,7 +161,7 @@ namespace platf {
 #ifndef __FreeBSD__
     input_access = input_access || access("/dev/input/uinput", R_OK | W_OK) == 0;
 #endif
-    return {{"input", input_access ? "granted" : "denied", config::input.keyboard || config::input.mouse || config::input.controller, true}};
+    return {{"input", input_access ? "granted" : "denied", config::input.keyboard || config::input.mouse, true}};
   }
 
   bool request_permission(std::string_view id) {

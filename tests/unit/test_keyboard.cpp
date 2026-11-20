@@ -356,7 +356,7 @@ namespace {
       });
 
       static int session = 0;
-      stream_ = input::alloc(std::make_shared<safe::mail_raw_t>(), std::format("keyboard-test-{}", ++session));
+      stream_ = input::alloc(std::make_shared<safe::mail_raw_t>());
       ASSERT_NE(stream_, nullptr);
     }
 

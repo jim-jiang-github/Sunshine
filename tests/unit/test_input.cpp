@@ -1,6 +1,6 @@
 /**
  * @file tests/unit/test_input.cpp
- * @brief Tests for input packet batching, retained stream input, and virtual gamepad lifecycle behavior.
+ * @brief Tests for input packet validation, batching, and stream input behavior.
  */
 
 // test includes
@@ -72,7 +72,7 @@ namespace {
   template<class Packet>
   void expect_packet_dispatches(Packet original, Packet different, std::uint32_t magic, std::size_t expected) {
     SCOPED_TRACE(magic);
-    auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "packet-batching");
+    auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>());
     ASSERT_NE(stream_input, nullptr);
     std::size_t dispatch_count = 0;
     input::testing::set_input_packet_hook([magic, &dispatch_count](std::uint32_t dispatched_magic) {
@@ -95,16 +95,14 @@ namespace {
   /**
    * @brief Fixture that installs a fake global virtual input backend.
    */
-  class InputGamepadSessionTest: public ::testing::Test {
+  class InputSessionTest: public ::testing::Test {
   protected:
     /**
      * @brief Preserve configuration and install observable fake devices.
      */
     void SetUp() override {
       original_input_ = config::input;
-      config::input.controller = true;
       config::input.mouse = true;
-      config::input.gamepad = "xseries";
 
       auto platform_input = platf::input();
       ASSERT_TRUE(platform_input);
@@ -117,12 +115,11 @@ namespace {
     }
 
     /**
-     * @brief Destroy retained test sessions and restore configuration.
+     * @brief Restore configuration and release the fake platform input.
      */
     void TearDown() override {
       input::testing::set_input_packet_hook({});
       input::testing::set_input_task_sink({});
-      input::terminate_gamepads();
       input::testing::set_platform_input({});
       context_ = nullptr;
       runtime_ = nullptr;
@@ -212,13 +209,8 @@ TEST(InputPacketValidationTest, EnforcesEveryFixedPacketSize) {
     input_packet_spec_t {SS_HSCROLL_MAGIC, sizeof(SS_HSCROLL_PACKET)},
     input_packet_spec_t {KEY_DOWN_EVENT_MAGIC, sizeof(NV_KEYBOARD_PACKET)},
     input_packet_spec_t {KEY_UP_EVENT_MAGIC, sizeof(NV_KEYBOARD_PACKET)},
-    input_packet_spec_t {MULTI_CONTROLLER_MAGIC_GEN5, sizeof(NV_MULTI_CONTROLLER_PACKET)},
     input_packet_spec_t {SS_TOUCH_MAGIC, sizeof(SS_TOUCH_PACKET)},
     input_packet_spec_t {SS_PEN_MAGIC, sizeof(SS_PEN_PACKET)},
-    input_packet_spec_t {SS_CONTROLLER_ARRIVAL_MAGIC, sizeof(SS_CONTROLLER_ARRIVAL_PACKET)},
-    input_packet_spec_t {SS_CONTROLLER_TOUCH_MAGIC, sizeof(SS_CONTROLLER_TOUCH_PACKET)},
-    input_packet_spec_t {SS_CONTROLLER_MOTION_MAGIC, sizeof(SS_CONTROLLER_MOTION_PACKET)},
-    input_packet_spec_t {SS_CONTROLLER_BATTERY_MAGIC, sizeof(SS_CONTROLLER_BATTERY_PACKET)},
   };
 
   for (const auto &[magic, size] : packet_specs) {
@@ -246,12 +238,12 @@ TEST(InputPacketValidationTest, PreservesUnknownPacketHandlingWithinDeclaredBoun
   EXPECT_TRUE(input::testing::is_valid_input_packet(packet));
 }
 
-TEST_F(InputGamepadSessionTest, RejectsMalformedBatchablePacketsAtQueueIngress) {
+TEST_F(InputSessionTest, RejectsMalformedBatchablePacketsAtQueueIngress) {
   ASSERT_FALSE(task_pool.running());
   const std::shared_ptr<input::input_t> empty_input;
   EXPECT_EQ(input::testing::queued_input_packet_count(empty_input), 0);
 
-  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "packet-validation-client");
+  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>());
   ASSERT_NE(stream_input, nullptr);
 
   auto short_header = make_input_packet(SS_PEN_MAGIC, sizeof(std::uint32_t), sizeof(NV_INPUT_HEADER) - 1);
@@ -263,11 +255,8 @@ TEST_F(InputGamepadSessionTest, RejectsMalformedBatchablePacketsAtQueueIngress) 
     input_packet_spec_t {MOUSE_MOVE_ABS_MAGIC, sizeof(NV_ABS_MOUSE_MOVE_PACKET)},
     input_packet_spec_t {SCROLL_MAGIC_GEN5, sizeof(NV_SCROLL_PACKET)},
     input_packet_spec_t {SS_HSCROLL_MAGIC, sizeof(SS_HSCROLL_PACKET)},
-    input_packet_spec_t {MULTI_CONTROLLER_MAGIC_GEN5, sizeof(NV_MULTI_CONTROLLER_PACKET)},
     input_packet_spec_t {SS_TOUCH_MAGIC, sizeof(SS_TOUCH_PACKET)},
     input_packet_spec_t {SS_PEN_MAGIC, sizeof(SS_PEN_PACKET)},
-    input_packet_spec_t {SS_CONTROLLER_TOUCH_MAGIC, sizeof(SS_CONTROLLER_TOUCH_PACKET)},
-    input_packet_spec_t {SS_CONTROLLER_MOTION_MAGIC, sizeof(SS_CONTROLLER_MOTION_PACKET)},
   };
 
   std::size_t valid_packet_count = 0;
@@ -289,90 +278,9 @@ TEST_F(InputGamepadSessionTest, RejectsMalformedBatchablePacketsAtQueueIngress) 
   }
 }
 
-TEST_F(InputGamepadSessionTest, SerializesArrivalAndStatePacketsForOneController) {
+TEST_F(InputSessionTest, YieldsAfterBoundedPacketBatch) {
   ASSERT_FALSE(task_pool.running());
-  config::input.gamepad = "auto";
-
-  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "simultaneous-controller-packets");
-  ASSERT_NE(stream_input, nullptr);
-  std::vector<std::shared_ptr<input::input_t>> scheduled;
-  input::testing::set_input_task_sink([&](std::shared_ptr<input::input_t> input) {
-    scheduled.push_back(std::move(input));
-  });
-
-  SS_CONTROLLER_ARRIVAL_PACKET arrival {};
-  arrival.header.size = util::endian::big<std::uint32_t>(sizeof(arrival) - sizeof(arrival.header.size));
-  arrival.header.magic = util::endian::little(SS_CONTROLLER_ARRIVAL_MAGIC);
-  arrival.controllerNumber = 0;
-  arrival.type = LI_CTYPE_NINTENDO;
-
-  NV_MULTI_CONTROLLER_PACKET state {};
-  state.header.size = util::endian::big<std::uint32_t>(sizeof(state) - sizeof(state.header.size));
-  state.header.magic = util::endian::little(MULTI_CONTROLLER_MAGIC_GEN5);
-  state.controllerNumber = 0;
-  state.activeGamepadMask = 1;
-
-  std::vector<std::uint8_t> arrival_bytes(sizeof(arrival));
-  std::memcpy(arrival_bytes.data(), &arrival, sizeof(arrival));
-  input::passthrough(stream_input, std::move(arrival_bytes));
-  ASSERT_EQ(scheduled.size(), 1);
-  EXPECT_EQ(scheduled.front(), stream_input);
-
-  std::promise<void> arrival_started;
-  std::promise<void> release_arrival;
-  const auto release_signal = release_arrival.get_future().share();
-  input::testing::set_input_packet_hook([&](std::uint32_t magic) {
-    if (magic == SS_CONTROLLER_ARRIVAL_MAGIC) {
-      arrival_started.set_value();
-      release_signal.wait();
-    }
-  });
-
-  std::jthread worker {input::testing::process_queued_messages, stream_input};
-  const auto arrival_status = arrival_started.get_future().wait_for(std::chrono::seconds {5});
-  if (arrival_status != std::future_status::ready) {
-    release_arrival.set_value();
-    worker.join();
-    FAIL() << "Controller arrival packet did not reach the dispatch hook";
-  }
-
-  std::vector<std::uint8_t> state_bytes(sizeof(state));
-  std::memcpy(state_bytes.data(), &state, sizeof(state));
-  input::passthrough(stream_input, std::move(state_bytes));
-  EXPECT_EQ(scheduled.size(), 1);
-  EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), 1);
-
-  auto other_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "independent-input-stream");
-  if (!other_input) {
-    release_arrival.set_value();
-    worker.join();
-    FAIL() << "Could not create independent input stream";
-  }
-  input::passthrough(other_input, make_input_packet(0x12345678, sizeof(std::uint32_t), sizeof(NV_INPUT_HEADER)));
-  EXPECT_EQ(scheduled.size(), 2);
-  if (scheduled.size() == 2) {
-    EXPECT_EQ(scheduled.back(), other_input);
-  }
-  const auto active_before_gamepad = runtime().active_device_count();
-  release_arrival.set_value();
-  worker.join();
-  input::testing::set_input_packet_hook({});
-  input::testing::process_queued_messages(other_input);
-
-  EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), 0);
-  EXPECT_EQ(input::testing::queued_input_packet_count(other_input), 0);
-  EXPECT_EQ(runtime().active_device_count(), active_before_gamepad + 1);
-  const auto gamepad_id = input::testing::gamepad_id(stream_input, 0);
-  ASSERT_GE(gamepad_id, 0);
-  const auto *adapter = platf::virtualhid::gamepad_adapter_for_testing(context(), gamepad_id);
-  ASSERT_NE(adapter, nullptr);
-  ASSERT_NE(adapter->gamepad(), nullptr);
-  EXPECT_EQ(adapter->gamepad()->profile().gamepad_kind, lvh::GamepadProfileKind::switch_pro);
-}
-
-TEST_F(InputGamepadSessionTest, YieldsAfterBoundedPacketBatch) {
-  ASSERT_FALSE(task_pool.running());
-  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "bounded-input-batch");
+  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>());
   ASSERT_NE(stream_input, nullptr);
 
   std::vector<std::shared_ptr<input::input_t>> scheduled;
@@ -395,28 +303,12 @@ TEST_F(InputGamepadSessionTest, YieldsAfterBoundedPacketBatch) {
   EXPECT_EQ(scheduled.size(), 2);
 }
 
-TEST_F(InputGamepadSessionTest, BatchesContinuousPacketsWithoutCrossingStateChanges) {
+TEST_F(InputSessionTest, BatchesContinuousPacketsWithoutCrossingStateChanges) {
   ASSERT_FALSE(task_pool.running());
   config::input.mouse = false;
-  config::input.controller = false;
   config::input.native_pen_touch = false;
   input::testing::set_input_task_sink([](std::shared_ptr<input::input_t>) {
   });
-
-  NV_MULTI_CONTROLLER_PACKET controller {};
-  expect_packet_dispatches(controller, controller, MULTI_CONTROLLER_MAGIC_GEN5, 1);
-  auto changed_controller = controller;
-  changed_controller.controllerNumber = 1;
-  expect_packet_dispatches(controller, changed_controller, MULTI_CONTROLLER_MAGIC_GEN5, 2);
-  changed_controller = controller;
-  changed_controller.activeGamepadMask = 1;
-  expect_packet_dispatches(controller, changed_controller, MULTI_CONTROLLER_MAGIC_GEN5, 3);
-  changed_controller = controller;
-  changed_controller.buttonFlags = 1;
-  expect_packet_dispatches(controller, changed_controller, MULTI_CONTROLLER_MAGIC_GEN5, 3);
-  changed_controller = controller;
-  changed_controller.buttonFlags2 = 1;
-  expect_packet_dispatches(controller, changed_controller, MULTI_CONTROLLER_MAGIC_GEN5, 3);
 
   SS_TOUCH_PACKET touch {};
   touch.eventType = LI_TOUCH_EVENT_MOVE;
@@ -444,140 +336,9 @@ TEST_F(InputGamepadSessionTest, BatchesContinuousPacketsWithoutCrossingStateChan
   changed_pen = pen;
   changed_pen.toolType = 1;
   expect_packet_dispatches(pen, changed_pen, SS_PEN_MAGIC, 3);
-
-  SS_CONTROLLER_TOUCH_PACKET controller_touch {};
-  controller_touch.eventType = LI_TOUCH_EVENT_MOVE;
-  expect_packet_dispatches(controller_touch, controller_touch, SS_CONTROLLER_TOUCH_MAGIC, 1);
-  auto changed_controller_touch = controller_touch;
-  changed_controller_touch.controllerNumber = 1;
-  expect_packet_dispatches(controller_touch, changed_controller_touch, SS_CONTROLLER_TOUCH_MAGIC, 2);
-  changed_controller_touch = controller_touch;
-  changed_controller_touch.pointerId = 1;
-  expect_packet_dispatches(controller_touch, changed_controller_touch, SS_CONTROLLER_TOUCH_MAGIC, 2);
-  changed_controller_touch = controller_touch;
-  changed_controller_touch.eventType = LI_TOUCH_EVENT_DOWN;
-  expect_packet_dispatches(controller_touch, changed_controller_touch, SS_CONTROLLER_TOUCH_MAGIC, 3);
-  changed_controller_touch.eventType = LI_TOUCH_EVENT_HOVER;
-  expect_packet_dispatches(controller_touch, changed_controller_touch, SS_CONTROLLER_TOUCH_MAGIC, 3);
-
-  SS_CONTROLLER_MOTION_PACKET motion {};
-  expect_packet_dispatches(motion, motion, SS_CONTROLLER_MOTION_MAGIC, 1);
-  auto changed_motion = motion;
-  changed_motion.controllerNumber = 1;
-  expect_packet_dispatches(motion, changed_motion, SS_CONTROLLER_MOTION_MAGIC, 2);
-  changed_motion = motion;
-  changed_motion.motionType = 1;
-  expect_packet_dispatches(motion, changed_motion, SS_CONTROLLER_MOTION_MAGIC, 2);
 }
 
-TEST_F(InputGamepadSessionTest, ReusesGamepadsAcrossPauseAndDestroysThemOnTermination) {
-  const std::string session_id = "paired-client-certificate";
-  auto first_mail = std::make_shared<safe::mail_raw_t>();
-  auto first = input::alloc(first_mail, session_id);
-  ASSERT_NE(first, nullptr);
-  const auto active_devices_before_gamepad = runtime().active_device_count();
-
-  const platf::gamepad_arrival_t metadata {LI_CTYPE_XBOX, 0, 0};
-  const auto original_id = input::testing::alloc_gamepad(first, 0, metadata);
-  ASSERT_GE(original_id, 0);
-  EXPECT_EQ(runtime().active_device_count(), active_devices_before_gamepad + 1);
-
-  const std::weak_ptr<input::input_t> paused = first;
-  first.reset();
-  EXPECT_FALSE(paused.expired());
-  EXPECT_EQ(runtime().active_device_count(), active_devices_before_gamepad + 1);
-
-  auto resumed_mail = std::make_shared<safe::mail_raw_t>();
-  auto resumed = input::alloc(resumed_mail, session_id);
-  ASSERT_NE(resumed, nullptr);
-  EXPECT_EQ(paused.lock(), resumed);
-  EXPECT_EQ(input::testing::gamepad_id(resumed, 0), original_id);
-  EXPECT_EQ(runtime().active_device_count(), active_devices_before_gamepad + 1);
-
-  input::terminate_gamepads(session_id);
-  EXPECT_EQ(input::testing::gamepad_id(resumed, 0), -1);
-  EXPECT_EQ(runtime().active_device_count(), active_devices_before_gamepad);
-
-  auto replacement = input::alloc(std::make_shared<safe::mail_raw_t>(), session_id);
-  EXPECT_NE(replacement, resumed);
-}
-
-TEST_F(InputGamepadSessionTest, ReplaysMotionAndRumbleAfterResumedControllerArrival) {
-  config::input.gamepad = "ds5";
-  const std::string session_id = "late-controller-arrival";
-  const auto capabilities = static_cast<std::uint16_t>(LI_CCAP_ACCEL | LI_CCAP_GYRO | LI_CCAP_RUMBLE);
-  auto first_mail = std::make_shared<safe::mail_raw_t>();
-  auto stream_input = input::alloc(first_mail, session_id);
-  const auto id = input::testing::alloc_gamepad(stream_input, 0, {LI_CTYPE_PS, capabilities, 0});
-  ASSERT_GE(id, 0);
-  auto *adapter = platf::virtualhid::gamepad_adapter_for_testing(context(), id);
-  ASSERT_NE(adapter, nullptr);
-  const auto device_count = runtime().active_device_count();
-  auto old_queue = first_mail->queue<platf::gamepad_feedback_msg_t>(mail::gamepad_feedback);
-  while (old_queue->pop(std::chrono::milliseconds {0})) {
-    // Discard initial motion requests before simulating a reconnect.
-  }
-
-  for (int reconnect = 0; reconnect < 3; ++reconnect) {
-    auto resumed_mail = std::make_shared<safe::mail_raw_t>();
-    auto resumed = input::alloc(resumed_mail, session_id);
-    ASSERT_EQ(resumed, stream_input);
-    auto feedback = resumed_mail->queue<platf::gamepad_feedback_msg_t>(mail::gamepad_feedback);
-    // Model the client discarding requests received before controller assignment.
-    ASSERT_TRUE(feedback->pop(std::chrono::milliseconds {0}));
-    ASSERT_TRUE(feedback->pop(std::chrono::milliseconds {0}));
-    ASSERT_FALSE(feedback->pop(std::chrono::milliseconds {0}));
-    lvh::GamepadOutput output;
-    output.kind = lvh::GamepadOutputKind::rumble;
-    output.low_frequency_rumble = 1234;
-    output.high_frequency_rumble = 5678;
-    ASSERT_TRUE(adapter->dispatch_output(output).ok());
-    ASSERT_TRUE(feedback->pop(std::chrono::milliseconds {0}));
-
-    SS_CONTROLLER_ARRIVAL_PACKET arrival {};
-    arrival.header.size = util::endian::big<std::uint32_t>(sizeof(arrival) - sizeof(arrival.header.size));
-    arrival.header.magic = util::endian::little(SS_CONTROLLER_ARRIVAL_MAGIC);
-    arrival.controllerNumber = 0;
-    arrival.type = LI_CTYPE_PS;
-    arrival.capabilities = util::endian::little(capabilities);
-    std::vector<std::uint8_t> bytes(sizeof(arrival));
-    std::memcpy(bytes.data(), &arrival, sizeof(arrival));
-    input::passthrough(resumed, std::move(bytes));
-    input::testing::process_queued_messages(resumed);
-
-    for (const auto motion_type : {LI_MOTION_TYPE_ACCEL, LI_MOTION_TYPE_GYRO}) {
-      const auto request = feedback->pop(std::chrono::milliseconds {0});
-      ASSERT_TRUE(request);
-      EXPECT_EQ(request->type, platf::gamepad_feedback_e::set_motion_event_state);
-      EXPECT_EQ(request->id, 0);
-      EXPECT_EQ(request->data.motion_event_state.motion_type, motion_type);
-      EXPECT_EQ(request->data.motion_event_state.report_rate, 100);
-    }
-    // Identical feedback sent before client readiness must not suppress this rumble.
-    ASSERT_TRUE(adapter->dispatch_output(output).ok());
-    const auto rumble = feedback->pop(std::chrono::milliseconds {0});
-    ASSERT_TRUE(rumble);
-    EXPECT_EQ(rumble->type, platf::gamepad_feedback_e::rumble);
-    EXPECT_EQ(rumble->data.rumble.lowfreq, 1234);
-    EXPECT_EQ(rumble->data.rumble.highfreq, 5678);
-    EXPECT_FALSE(old_queue->pop(std::chrono::milliseconds {0}));
-    EXPECT_EQ(input::testing::gamepad_id(resumed, 0), id);
-    EXPECT_EQ(platf::virtualhid::gamepad_adapter_for_testing(context(), id), adapter);
-    EXPECT_EQ(runtime().active_device_count(), device_count);
-    old_queue = std::move(feedback);
-  }
-}
-
-TEST_F(InputGamepadSessionTest, ReportsMissingRetainedBackendOnArrival) {
-  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "missing-retained-backend");
-  const platf::gamepad_arrival_t metadata {LI_CTYPE_XBOX, 0, 0};
-  const auto id = input::testing::alloc_gamepad(stream_input, 0, metadata);
-  ASSERT_GE(id, 0);
-  platf::virtualhid::free_gamepad(context(), id);
-  EXPECT_EQ(input::testing::alloc_gamepad(stream_input, 0, metadata), -1);
-}
-
-TEST_F(InputGamepadSessionTest, RefreshesSharedVirtualInputAfterLicenseStateChanges) {
+TEST_F(InputSessionTest, RefreshesSharedVirtualInputAfterLicenseStateChanges) {
   ASSERT_NE(context().keyboard, nullptr);
   ASSERT_NE(context().mouse, nullptr);
   const auto original_keyboard_id = context().keyboard->device_id();
@@ -593,9 +354,9 @@ TEST_F(InputGamepadSessionTest, RefreshesSharedVirtualInputAfterLicenseStateChan
   EXPECT_EQ(runtime().active_device_count(), active_devices);
 }
 
-TEST_F(InputGamepadSessionTest, RetargetsRelativeMouseFromLatestStreamGeometry) {
+TEST_F(InputSessionTest, RetargetsRelativeMouseFromLatestStreamGeometry) {
   auto session_mail = std::make_shared<safe::mail_raw_t>();
-  auto stream_input = input::alloc(session_mail, "relative-mouse-client");
+  auto stream_input = input::alloc(session_mail);
   ASSERT_NE(stream_input, nullptr);
 
   input::touch_port_t left_viewport {
@@ -644,12 +405,12 @@ TEST_F(InputGamepadSessionTest, RetargetsRelativeMouseFromLatestStreamGeometry) 
   EXPECT_EQ(context().mouse_viewport.offset_x, 0);
 }
 
-TEST_F(InputGamepadSessionTest, TranslatesEditingKeysToCanonicalKeycodes) {
+TEST_F(InputSessionTest, TranslatesEditingKeysToCanonicalKeycodes) {
   config::input.keyboard = true;
   config::input.key_repeat_delay = std::chrono::milliseconds {0};
 
   auto mail = std::make_shared<safe::mail_raw_t>();
-  auto session = input::alloc(mail, "editing-keys-client");
+  auto session = input::alloc(mail);
   ASSERT_NE(session, nullptr);
   ASSERT_NE(context().keyboard, nullptr);
 
@@ -712,9 +473,9 @@ TEST_F(InputGamepadSessionTest, TranslatesEditingKeysToCanonicalKeycodes) {
   }
 }
 
-TEST_F(InputGamepadSessionTest, RetargetsNativeTouchAndPenWithoutApplyingTheMonitorOffsetTwice) {
+TEST_F(InputSessionTest, RetargetsNativeTouchAndPenWithoutApplyingTheMonitorOffsetTwice) {
   auto session_mail = std::make_shared<safe::mail_raw_t>();
-  auto stream_input = input::alloc(session_mail, "absolute-input-client");
+  auto stream_input = input::alloc(session_mail);
   ASSERT_NE(stream_input, nullptr);
   auto &client = platf::virtualhid::get_client_context(input::testing::client_context(stream_input));
   ASSERT_NE(client.touch, nullptr);

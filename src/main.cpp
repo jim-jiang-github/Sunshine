@@ -178,7 +178,11 @@ void mainThreadLoop(const std::shared_ptr<safe::event_t<bool>> &shutdown_event) 
  * @param argv The arguments.
  * @return Process or platform callback exit code.
  */
+#ifdef SUNSHINE_EMBEDDED
+extern "C" __declspec(dllexport) int soluna_sunshine_main(int argc, char *argv[]) {
+#else
 int main(int argc, char *argv[]) {
+#endif
 #ifdef __linux__
   const bool privileged_execution = getauxval(AT_SECURE) != 0 || platf::has_elevated_privileges(true);
   if (privileged_execution && !platf::sanitize_process_environment()) {
@@ -285,7 +289,6 @@ int main(int argc, char *argv[]) {
   }
 
 #ifdef _WIN32
-  config::select_all_gamepad_drivers_if_licensed(lvh::get_license_status().license.licensed());
 #endif
 
   // Adding guard here first as it also performs recovery after crash,
@@ -457,10 +460,6 @@ int main(int argc, char *argv[]) {
 
   reed_solomon_init();
   auto input_deinit_guard = input::init();
-
-  if (config::input.controller && input::probe_gamepads()) {
-    BOOST_LOG(warning) << "No gamepad input is available"sv;
-  }
 
   if (video::probe_encoders()) {
     BOOST_LOG(error) << "Video failed to find working encoder"sv;

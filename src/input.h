@@ -1,6 +1,6 @@
 /**
  * @file src/input.h
- * @brief Declarations for gamepad, keyboard, and mouse input handling.
+ * @brief Declarations for keyboard, mouse, pen, and touch input handling.
  */
 #pragma once
 
@@ -10,7 +10,6 @@
 #include <functional>
 #include <memory>
 #include <span>
-#include <string_view>
 #include <vector>
 
 // local includes
@@ -34,21 +33,6 @@ namespace input {
   void reset(std::shared_ptr<input_t> &input);
 
   /**
-   * @brief Destroy every retained virtual gamepad session.
-   *
-   * Retained gamepads survive a paused transport connection so they can be reused on resume. Call this when the
-   * streamed application or all streaming sessions are explicitly terminated.
-   */
-  void terminate_gamepads();
-
-  /**
-   * @brief Destroy virtual gamepads retained for one paired client.
-   *
-   * @param session_id Stable paired-client identity used by alloc().
-   */
-  void terminate_gamepads(std::string_view session_id);
-
-  /**
    * @brief Queue a raw input message for platform passthrough.
    */
   void passthrough(std::shared_ptr<input_t> &input, std::vector<std::uint8_t> &&input_data);
@@ -59,13 +43,6 @@ namespace input {
    * @return Cleanup handle for initialized input resources, or null if none are required.
    */
   [[nodiscard]] std::unique_ptr<platf::deinit_t> init();
-
-  /**
-   * @brief Probe whether the platform can create virtual gamepads.
-   *
-   * @return True when at least one configured gamepad backend is available.
-   */
-  bool probe_gamepads();
 
   /**
    * @brief Recreate shared libvirtualhid keyboard and mouse devices after a license-state change.
@@ -79,10 +56,9 @@ namespace input {
    * @brief Allocate and initialize platform input state for a stream.
    *
    * @param mail Mailbox used to exchange messages with worker threads.
-   * @param session_id Stable paired-client identity shared by launch and resume connections.
    * @return Shared input state bound to the stream mailbox.
    */
-  std::shared_ptr<input_t> alloc(safe::mail_t mail, std::string session_id);
+  std::shared_ptr<input_t> alloc(safe::mail_t mail);
 
 #ifdef SUNSHINE_TESTS
   namespace testing {
@@ -100,25 +76,6 @@ namespace input {
      * @return Borrowed platform client input context.
      */
     platf::client_input_t *client_context(const std::shared_ptr<input_t> &input);
-
-    /**
-     * @brief Allocate a gamepad directly in retained input state for a unit test.
-     *
-     * @param input Retained input state.
-     * @param client_index Client-relative controller index.
-     * @param metadata Client-reported controller metadata.
-     * @return Assigned global gamepad slot, or -1 on failure.
-     */
-    int alloc_gamepad(std::shared_ptr<input_t> &input, std::uint8_t client_index, const platf::gamepad_arrival_t &metadata);
-
-    /**
-     * @brief Return the global gamepad slot stored for a test controller.
-     *
-     * @param input Retained input state.
-     * @param client_index Client-relative controller index.
-     * @return Assigned global gamepad slot, or -1 when unallocated.
-     */
-    int gamepad_id(const std::shared_ptr<input_t> &input, std::uint8_t client_index);
 
     /**
      * @brief Install a callback called just before dispatching a queued input packet in a test.

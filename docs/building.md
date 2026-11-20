@@ -28,12 +28,6 @@ the system libva headers so its compatibility shims match the installed API. Bun
 are excluded from the build. The system provides libdrm, the GPU's VA-API driver, and libva's driver configuration.
 AppImages use the same system libraries at runtime; they do not bundle libva.
 
-#### Prebuilt Web UI
-
-Sunshine releases publish the platform-independent Web UI as the `@lizardbyte/sunshine` package to npm and GitHub
-Packages. The package contains the production assets under `build/assets/web`, so downstream packagers can install the
-Web UI without running Node.js or Vite during the native Sunshine build.
-
 #### FreeBSD
 > [!CAUTION]
 > Sunshine support for FreeBSD is experimental and may be incomplete or not work as expected
@@ -248,6 +242,20 @@ mkdir build
 cmake -B build -G Ninja -S .
 ninja -C build
 ```
+
+The bundled browser Web UI is not built or packaged. Sunshine's HTTPS management API remains available for a separate PC UI.
+
+For a remote-desktop-only Windows build without the tray:
+
+```bash
+cmake -B build -G Ninja -S . \
+  -DSUNSHINE_ENABLE_TRAY=OFF \
+  -DBUILD_DOCS=OFF \
+  -DBUILD_TESTS=OFF
+ninja -C build
+```
+
+Sunshine retains keyboard, mouse, pen, and touch input; gamepad input support is removed.
 
 > [!TIP]
 > Available build options can be found in

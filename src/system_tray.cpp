@@ -187,11 +187,7 @@ namespace system_tray {
   #if defined(_WIN32) || defined(__APPLE__)
   void tray_virtualhid_license_cb([[maybe_unused]] struct tray_menu *item) {
     BOOST_LOG(info) << "Opening Virtual HID Broker license settings from system tray"sv;
-    #ifdef _WIN32
-    launch_ui(config::input.gamepad_driver == config::GAMEPAD_DRIVER_VIGEMBUS ? "/config#gamepad_driver" : "/troubleshooting#virtualhid-license");
-    #else
     launch_ui("/troubleshooting#virtualhid-license");
-    #endif
   }
 
   void tray_virtualhid_download_cb([[maybe_unused]] struct tray_menu *item) {
@@ -464,9 +460,9 @@ namespace system_tray {
     } else {
       set_virtualhid_license_menu_item(1, std::string {virtualhid_license_state_detail(license.state)}, true);
     #ifdef _WIN32
-      set_virtualhid_license_menu_item(2, "Driver-backed keyboard, mouse, and gamepads are locked", true);
+      set_virtualhid_license_menu_item(2, "Driver-backed keyboard and mouse are locked", true);
     #else
-      set_virtualhid_license_menu_item(2, "Virtual gamepads are locked", true);
+      set_virtualhid_license_menu_item(2, "Virtual input devices are locked", true);
     #endif
       set_virtualhid_license_menu_item(
         3,
@@ -500,42 +496,22 @@ namespace system_tray {
     clear_tray_notification();
     rebuild_virtualhid_license_menu(license);
 
-    #ifdef _WIN32
-    if (config::input.controller && config::input.gamepad_driver.empty()) {
-      tray.notification_title = "Choose a Gamepad Backend";
-      tray.notification_text =
-        "Choose a gamepad backend in Input settings. Virtual HID Broker is a paid upgrade; ViGEmBus is limited and has reached end of life.";
-      tray.notification_icon = tray.allIconPaths[4];
-      tray.notification_cb = []() {
-        launch_ui("/config#gamepad_driver");
-      };
-    } else if (config::input.controller && config::input.gamepad_driver != config::GAMEPAD_DRIVER_NONE && config::input.gamepad_driver != config::GAMEPAD_DRIVER_VIGEMBUS && notify_if_unlicensed && !license.licensed()) {
-      tray.notification_title = "Virtual HID Broker License";
-      tray.notification_text =
-        "Get or manage a license, or use the limited, end-of-life ViGEmBus driver.";
-      tray.notification_icon = tray.allIconPaths[4];
-      tray.notification_cb = []() {
-        launch_ui("/troubleshooting#virtualhid-license");
-      };
-    }
-    #else
-    if (config::input.controller && config::input.gamepad_driver != config::GAMEPAD_DRIVER_NONE && notify_if_unlicensed && !license.licensed()) {
+    if (notify_if_unlicensed && !license.licensed()) {
       if (license.service_available) {
         tray.notification_title = "Virtual HID Broker License";
-        tray.notification_text = "Activate a machine license to use virtual gamepads. Click to manage the license.";
+        tray.notification_text = "Activate a machine license to use virtual keyboard and mouse devices. Click to manage the license.";
         tray.notification_cb = []() {
           launch_ui("/troubleshooting#virtualhid-license");
         };
       } else {
         tray.notification_title = "Virtual HID Broker Is Unavailable";
-        tray.notification_text = "Install and start Virtual HID Broker to use virtual gamepads. Click to download.";
+        tray.notification_text = "Install and start Virtual HID Broker to use virtual keyboard and mouse devices. Click to download.";
         tray.notification_cb = []() {
           tray_virtualhid_download_cb(nullptr);
         };
       }
       tray.notification_icon = tray.allIconPaths[4];
     }
-    #endif
 
     if (tray_initialized_state().load()) {
       tray_update(&tray);
@@ -553,14 +529,9 @@ namespace system_tray {
     const bool version_compatible,
     const std::string_view supported_versions
   ) {
-    if (config::input.gamepad_driver == config::GAMEPAD_DRIVER_NONE || !installed || version_compatible) {
+    if (!installed || version_compatible) {
       return;
     }
-    #ifdef _WIN32
-    if (config::input.gamepad_driver.empty() || config::input.gamepad_driver == config::GAMEPAD_DRIVER_VIGEMBUS) {
-      return;
-    }
-    #endif
 
     const std::scoped_lock lock(tray_state_mutex());
     clear_tray_notification();

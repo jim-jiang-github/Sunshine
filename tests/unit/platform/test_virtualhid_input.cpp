@@ -22,10 +22,6 @@
 // lib includes
 #include <lizardbyte/common/env.h>
 
-#if defined(_WIN32) || defined(__APPLE__)
-  #include <libvirtualhid/license.hpp>
-#endif
-
 // local includes
 #include "src/config.h"
 #include "src/globals.h"
@@ -33,75 +29,6 @@
 
 using namespace std::chrono_literals;
 using namespace std::literals;
-
-namespace {
-
-  /**
-   * @brief Expected touchpad support for a configured gamepad.
-   */
-  struct gamepad_capabilities_case_t {
-    std::string_view gamepad;  ///< Configured gamepad name.
-    bool expected_touchpad;  ///< Whether the configured gamepad supports touchpad input.
-    bool expected_controller_extensions;  ///< Whether Moonlight controller extensions should be advertised.
-  };
-
-  /**
-   * @brief Parameterized fixture that restores the configured gamepad after each test.
-   */
-  class VirtualHidInputTest: public ::testing::TestWithParam<gamepad_capabilities_case_t> {
-  protected:
-    /**
-     * @brief Preserve the configured gamepad.
-     */
-    void SetUp() override {
-      original_gamepad = config::input.gamepad;
-    }
-
-    /**
-     * @brief Restore the configured gamepad.
-     */
-    void TearDown() override {
-      config::input.gamepad = std::move(original_gamepad);
-    }
-
-  private:
-    std::string original_gamepad;  ///< Configured gamepad restored after each test.
-  };
-
-}  // namespace
-
-TEST_P(VirtualHidInputTest, ReportsExpectedTouchpadSupport) {
-  const auto &test_case = GetParam();
-  config::input.gamepad = test_case.gamepad;
-  EXPECT_EQ(platf::virtualhid::configured_gamepad_supports_touchpad(), test_case.expected_touchpad) << test_case.gamepad;
-}
-
-TEST_P(VirtualHidInputTest, ReportsExpectedControllerExtensionSupport) {
-  const auto &test_case = GetParam();
-  config::input.gamepad = test_case.gamepad;
-  EXPECT_EQ(
-    platf::virtualhid::configured_gamepad_supports_controller_extensions(),
-    test_case.expected_controller_extensions
-  ) << test_case.gamepad;
-}
-
-INSTANTIATE_TEST_SUITE_P(
-  ConfiguredGamepads,
-  VirtualHidInputTest,
-  ::testing::Values(
-    gamepad_capabilities_case_t {"auto"sv, true, true},
-    gamepad_capabilities_case_t {"generic"sv, false, false},
-    gamepad_capabilities_case_t {"x360"sv, false, false},
-    gamepad_capabilities_case_t {"xone"sv, false, false},
-    gamepad_capabilities_case_t {"xseries"sv, false, false},
-    gamepad_capabilities_case_t {"ds4"sv, true, true},
-    gamepad_capabilities_case_t {"ds5"sv, true, true},
-    gamepad_capabilities_case_t {"switch"sv, false, true}
-  ),
-  [](const ::testing::TestParamInfo<gamepad_capabilities_case_t> &info) {
-    return std::string {info.param.gamepad};
-  }
-);
 
 namespace {
 
@@ -117,9 +44,6 @@ namespace {
       original_input = config::input;
       context_ = std::make_unique<platf::virtualhid::input_context_t>(lvh::BackendKind::fake);
       client_ = std::make_unique<platf::virtualhid::client_context_t>(*context_);
-      const auto *test_info = ::testing::UnitTest::GetInstance()->current_test_info();
-      const std::string queue_name = std::string {"virtualhid-input-test-"} + test_info->test_suite_name() + '-' + test_info->name();
-      feedback_queue_ = mail::man->queue<platf::gamepad_feedback_msg_t>(queue_name);
 
       ASSERT_NE(context_->runtime, nullptr);
       ASSERT_NE(context_->keyboard, nullptr);
@@ -134,36 +58,7 @@ namespace {
     void TearDown() override {
       client_.reset();
       context_.reset();
-      feedback_queue_.reset();
       config::input = std::move(original_input);
-    }
-
-    /**
-     * @brief Allocate a fake gamepad and return its state adapter.
-     *
-     * @param profile Configured Sunshine profile name.
-     * @param type Client-reported controller type.
-     * @param capabilities Client-reported capability flags.
-     * @param global_index Global Sunshine gamepad slot.
-     * @param client_index Client-relative gamepad index.
-     * @return Allocated adapter, or `nullptr` when allocation fails.
-     */
-    lvh::GamepadStateAdapter *allocate_gamepad(
-      std::string_view profile,
-      std::uint8_t type = LI_CTYPE_UNKNOWN,
-      std::uint16_t capabilities = 0,
-      int global_index = 0,
-      std::uint8_t client_index = 3
-    ) {
-      config::input.gamepad = profile;
-      const platf::gamepad_id_t id {global_index, client_index};
-      const platf::gamepad_arrival_t metadata {type, capabilities, 0};
-      if (platf::virtualhid::alloc_gamepad(*context_, id, metadata, feedback_queue_) != 0) {
-        ADD_FAILURE() << "Failed to allocate fake gamepad profile " << profile;
-        return nullptr;
-      }
-
-      return platf::virtualhid::gamepad_adapter_for_testing(*context_, global_index);
     }
 
     /**
@@ -184,38 +79,11 @@ namespace {
       return client_.get();
     }
 
-    /**
-     * @brief Access the gamepad feedback queue.
-     *
-     * @return Reference to the fixture-owned feedback queue.
-     */
-    platf::feedback_queue_t &feedback_queue() {
-      return feedback_queue_;
-    }
-
   private:
     config::input_t original_input;  ///< Input configuration restored after each test.
     std::unique_ptr<platf::virtualhid::input_context_t> context_;  ///< Shared fake virtual devices.
     std::unique_ptr<platf::virtualhid::client_context_t> client_;  ///< Per-client fake touch and pen devices.
-    platf::feedback_queue_t feedback_queue_;  ///< Captured gamepad feedback messages.
   };
-
-  /**
-   * @brief Auto-selection scenario for a client-reported gamepad.
-   */
-  struct auto_profile_case_t {
-    const char *name;  ///< Stable parameter name.
-    std::uint8_t type;  ///< Client-reported controller type.
-    std::uint16_t capabilities;  ///< Client-reported capability flags.
-    lvh::GamepadProfileKind expected;  ///< Expected libvirtualhid profile.
-  };
-
-  /**
-   * @brief Parameterized fixture for automatic gamepad profile selection.
-   */
-  class VirtualHidAutoProfileTest:
-      public VirtualHidDeviceTest,
-      public ::testing::WithParamInterface<auto_profile_case_t> {};
 
 }  // namespace
 
@@ -247,7 +115,6 @@ namespace {
       ASSERT_EQ(lizardbyte::common::set_env("XDG_SEAT", "seat1"), 0);
       context_ = std::make_unique<platf::virtualhid::input_context_t>(lvh::BackendKind::fake);
       client_ = std::make_unique<platf::virtualhid::client_context_t>(*context_);
-      feedback_queue_ = mail::man->queue<platf::gamepad_feedback_msg_t>("virtualhid-input-test-seat");
     }
 
     /**
@@ -256,7 +123,6 @@ namespace {
     void TearDown() override {
       client_.reset();
       context_.reset();
-      feedback_queue_.reset();
       config::input = std::move(original_input_);
       if (original_seat_) {
         lizardbyte::common::set_env("XDG_SEAT", *original_seat_);
@@ -267,7 +133,6 @@ namespace {
 
     std::unique_ptr<platf::virtualhid::input_context_t> context_;  ///< Shared fake virtual devices.
     std::unique_ptr<platf::virtualhid::client_context_t> client_;  ///< Per-client fake touch and pen devices.
-    platf::feedback_queue_t feedback_queue_;  ///< Captured gamepad feedback messages.
 
   private:
     std::optional<std::string> original_seat_;  ///< `XDG_SEAT` value restored after each test.
@@ -285,23 +150,11 @@ TEST_F(VirtualHidSeatDeviceTest, ScopesEveryDeviceNameToTargetSeat) {
   EXPECT_EQ(context_->mouse->profile().name, lvh::profiles::mouse().name + " (seat1)");
   EXPECT_EQ(client_->touch->profile().name, lvh::profiles::touchscreen().name + " (seat1)");
   EXPECT_EQ(client_->pen->profile().name, lvh::profiles::pen_tablet().name + " (seat1)");
-
-  config::input.gamepad = "x360";
-  const platf::gamepad_id_t id {0, 0};
-  const platf::gamepad_arrival_t metadata {LI_CTYPE_XBOX, 0, 0};
-  ASSERT_EQ(platf::virtualhid::alloc_gamepad(*context_, id, metadata, feedback_queue_), 0);
-  auto *adapter = platf::virtualhid::gamepad_adapter_for_testing(*context_, 0);
-  ASSERT_NE(adapter, nullptr);
-  ASSERT_NE(adapter->gamepad(), nullptr);
-  EXPECT_TRUE(adapter->gamepad()->profile().name.starts_with("Sunshine "));
-  EXPECT_TRUE(adapter->gamepad()->profile().name.ends_with(" (seat1)"));
-  platf::virtualhid::free_gamepad(*context_, 0);
 }
 
 TEST_F(VirtualHidDeviceTest, CreatesEveryDeviceWithFakeRuntime) {
   EXPECT_EQ(context()->runtime->backend_kind(), lvh::BackendKind::fake);
   EXPECT_EQ(context()->runtime->capabilities().backend_name, "fake");
-  EXPECT_TRUE(context()->runtime->capabilities().supports_gamepad);
   EXPECT_TRUE(context()->keyboard->is_open());
   EXPECT_TRUE(context()->mouse->is_open());
   EXPECT_TRUE(client()->touch->is_open());
@@ -310,134 +163,6 @@ TEST_F(VirtualHidDeviceTest, CreatesEveryDeviceWithFakeRuntime) {
   const auto runtime = platf::virtualhid::create_runtime(lvh::BackendKind::fake);
   ASSERT_NE(runtime, nullptr);
   EXPECT_EQ(runtime->backend_kind(), lvh::BackendKind::fake);
-}
-
-TEST_F(VirtualHidDeviceTest, SelectsVirtualHidGamepadRuntimeByBackendLicenseAndPreference) {
-  auto capabilities = context()->runtime->capabilities();
-  capabilities.supports_gamepad = true;
-  capabilities.requires_installed_driver = false;
-  EXPECT_TRUE(platf::virtualhid::should_use_gamepad_runtime(capabilities, "", false));
-  EXPECT_TRUE(platf::virtualhid::should_use_gamepad_runtime(capabilities, config::GAMEPAD_DRIVER_ALL, false));
-
-  capabilities.requires_installed_driver = true;
-  EXPECT_FALSE(platf::virtualhid::should_use_gamepad_runtime(capabilities, config::GAMEPAD_DRIVER_ALL, false));
-  EXPECT_TRUE(platf::virtualhid::should_use_gamepad_runtime(capabilities, config::GAMEPAD_DRIVER_ALL, true));
-  EXPECT_TRUE(platf::virtualhid::should_use_gamepad_runtime(capabilities, config::GAMEPAD_DRIVER_VIRTUALHID, true));
-  EXPECT_FALSE(platf::virtualhid::should_use_gamepad_runtime(capabilities, config::GAMEPAD_DRIVER_VIGEMBUS, true));
-  EXPECT_FALSE(platf::virtualhid::should_use_gamepad_runtime(capabilities, config::GAMEPAD_DRIVER_NONE, true));
-
-  capabilities.supports_gamepad = false;
-  EXPECT_FALSE(platf::virtualhid::should_use_gamepad_runtime(capabilities, config::GAMEPAD_DRIVER_ALL, true));
-}
-
-TEST_F(VirtualHidDeviceTest, SelectsVigembusFallbackByBackendAndConfiguredProfile) {
-  EXPECT_TRUE(platf::virtualhid::should_try_vigembus_fallback("auto", true, config::GAMEPAD_DRIVER_ALL));
-  EXPECT_TRUE(platf::virtualhid::should_try_vigembus_fallback("x360", true, config::GAMEPAD_DRIVER_ALL));
-  EXPECT_TRUE(platf::virtualhid::should_try_vigembus_fallback("ds4", true, config::GAMEPAD_DRIVER_ALL));
-  EXPECT_FALSE(platf::virtualhid::should_try_vigembus_fallback("xseries", true, config::GAMEPAD_DRIVER_ALL));
-
-  EXPECT_TRUE(platf::virtualhid::should_try_vigembus_fallback("xseries", false, config::GAMEPAD_DRIVER_ALL));
-  EXPECT_TRUE(platf::virtualhid::should_try_vigembus_fallback("xseries", false, ""));
-  EXPECT_TRUE(platf::virtualhid::should_try_vigembus_fallback("xseries", true, config::GAMEPAD_DRIVER_VIGEMBUS));
-  EXPECT_FALSE(platf::virtualhid::should_try_vigembus_fallback("auto", false, config::GAMEPAD_DRIVER_VIRTUALHID));
-  EXPECT_FALSE(platf::virtualhid::should_try_vigembus_fallback("auto", false, config::GAMEPAD_DRIVER_NONE));
-}
-
-TEST_F(VirtualHidDeviceTest, ReportsStaticAndRuntimeGamepadChoices) {
-  constexpr std::array expected_names {"auto"sv, "generic"sv, "x360"sv, "xone"sv, "xseries"sv, "ds4"sv, "ds5"sv, "switch"sv};
-
-  const auto static_gamepads = platf::virtualhid::static_supported_gamepads();
-  ASSERT_EQ(static_gamepads.size(), expected_names.size());
-  EXPECT_TRUE(static_gamepads.front().is_enabled);
-  for (std::size_t index = 0; index < expected_names.size(); ++index) {
-    EXPECT_EQ(static_gamepads[index].name, expected_names[index]);
-    EXPECT_TRUE(static_gamepads[index].reason_disabled.empty());
-  }
-
-  const auto available_gamepads = platf::virtualhid::supported_gamepads(context()->runtime.get());
-  ASSERT_EQ(available_gamepads.size(), expected_names.size());
-  for (const auto &gamepad : available_gamepads) {
-    EXPECT_TRUE(gamepad.is_enabled) << gamepad.name;
-    EXPECT_TRUE(gamepad.reason_disabled.empty()) << gamepad.name;
-  }
-
-  const auto licensed_broker_gamepads = platf::virtualhid::supported_gamepads(context()->runtime.get(), false, true, true);
-  for (const auto &gamepad : licensed_broker_gamepads) {
-    EXPECT_TRUE(gamepad.is_enabled) << gamepad.name;
-  }
-
-  const auto unlicensed_gamepads = platf::virtualhid::supported_gamepads(context()->runtime.get(), false, false, true);
-  ASSERT_EQ(unlicensed_gamepads.size(), expected_names.size());
-  for (const auto &gamepad : unlicensed_gamepads) {
-    EXPECT_FALSE(gamepad.is_enabled) << gamepad.name;
-    EXPECT_EQ(gamepad.reason_disabled, "gamepads.virtualhid-license-invalid") << gamepad.name;
-  }
-
-  const auto no_runtime_gamepads = platf::virtualhid::supported_gamepads(nullptr, true);
-  EXPECT_EQ(no_runtime_gamepads.size(), expected_names.size());
-}
-
-#if defined(_WIN32) || defined(__APPLE__)
-TEST_F(VirtualHidDeviceTest, NoneSelectionHidesAvailableGamepads) {
-  config::input.gamepad_driver = config::GAMEPAD_DRIVER_NONE;
-  auto platform_input = platf::input();
-  ASSERT_TRUE(platform_input);
-
-  EXPECT_TRUE(platf::supported_gamepads(std::addressof(platform_input)).empty());
-  EXPECT_EQ(platf::get_capabilities() & platf::platform_caps::controller_touch, 0U);
-}
-
-TEST_F(VirtualHidDeviceTest, BrokerCreatesAndUpdatesEveryGamepadProfileWhenLicensed) {
-  if (!lvh::get_license_status().license.licensed()) {
-    GTEST_SKIP() << "Virtual HID Broker is not activated";
-  }
-
-  config::input.gamepad_driver = config::GAMEPAD_DRIVER_VIRTUALHID;
-  auto platform_input = platf::input();
-  ASSERT_TRUE(platform_input);
-  const auto &context = platf::virtualhid::get_input_context(platform_input);
-  if (!context.runtime || !context.runtime->capabilities().supports_gamepad) {
-    GTEST_SKIP() << "Virtual HID Broker is not installed";
-  }
-
-  const auto &available = platf::supported_gamepads(std::addressof(platform_input));
-  for (const auto &gamepad : available) {
-    EXPECT_TRUE(gamepad.is_enabled) << gamepad.name;
-  }
-
-  constexpr std::array profiles {"generic"sv, "x360"sv, "xone"sv, "xseries"sv, "ds4"sv, "ds5"sv, "switch"sv};
-  const platf::gamepad_id_t id {0, 0};
-  const platf::gamepad_arrival_t metadata {LI_CTYPE_UNKNOWN, 0, 0};
-  for (const auto profile : profiles) {
-    config::input.gamepad = profile;
-    ASSERT_EQ(platf::alloc_gamepad(platform_input, id, metadata, nullptr), 0) << profile;
-    platf::gamepad_update(platform_input, 0, {platf::A, 255, 0, 0, 0, 0, 0});
-    const auto *adapter = platf::virtualhid::gamepad_adapter_for_testing(platf::virtualhid::get_input_context(platform_input), 0);
-    ASSERT_NE(adapter, nullptr);
-    EXPECT_TRUE(adapter->state().buttons.test(lvh::GamepadButton::a)) << profile;
-    platf::free_gamepad(platform_input, 0);
-  }
-}
-#endif
-
-TEST_F(VirtualHidDeviceTest, RejectsUnavailableAndInvalidGamepadSlots) {
-  const platf::gamepad_arrival_t metadata {LI_CTYPE_XBOX, 0, 0};
-  const platf::gamepad_id_t valid_id {0, 0};
-
-  platf::virtualhid::input_context_t no_runtime {lvh::BackendKind::fake};
-  no_runtime.runtime.reset();
-  no_runtime.refresh_keyboard();
-  no_runtime.refresh_mouse();
-  EXPECT_EQ(no_runtime.keyboard, nullptr);
-  EXPECT_EQ(no_runtime.mouse, nullptr);
-  EXPECT_EQ(platf::virtualhid::alloc_gamepad(no_runtime, valid_id, metadata, nullptr), -1);
-
-  EXPECT_EQ(platf::virtualhid::alloc_gamepad(*context(), {-1, 0}, metadata, nullptr), -1);
-  EXPECT_EQ(platf::virtualhid::alloc_gamepad(*context(), {static_cast<int>(context()->gamepads.size()), 0}, metadata, nullptr), -1);
-  EXPECT_FALSE(platf::virtualhid::has_gamepad(*context(), -1));
-  EXPECT_FALSE(platf::virtualhid::has_gamepad(*context(), static_cast<int>(context()->gamepads.size())));
-  EXPECT_EQ(platf::virtualhid::gamepad_adapter_for_testing(*context(), 0), nullptr);
-  EXPECT_EQ(platf::virtualhid::rebind_gamepad(*context(), valid_id, feedback_queue()), -1);
 }
 
 TEST_F(VirtualHidDeviceTest, RoutesLibvirtualhidDiagnosticsToSunshineLog) {
@@ -456,345 +181,6 @@ TEST_F(VirtualHidDeviceTest, RoutesLibvirtualhidDiagnosticsToSunshineLog) {
   EXPECT_TRUE(log_checker::line_contains("test_sunshine.log", "Debug: [libvirtualhid] mouse "));
   EXPECT_TRUE(log_checker::line_contains("test_sunshine.log", "Warning: [libvirtualhid] rejected mouse event:"));
   EXPECT_TRUE(log_checker::line_contains("test_sunshine.log", "Error: [libvirtualhid] mouse input failed: mouse is closed"));
-}
-
-TEST_F(VirtualHidDeviceTest, AllocatesManualProfileAndTranslatesFullState) {
-  const auto active_devices_before_gamepad = context()->runtime->active_device_count();
-  config::input.ds4_back_as_touchpad_click = true;
-  config::input.virtualhid_randomize_mac = false;
-  const auto capabilities = static_cast<std::uint16_t>(LI_CCAP_ACCEL | LI_CCAP_GYRO | LI_CCAP_TOUCHPAD | LI_CCAP_RGB_LED | LI_CCAP_BATTERY_STATE);
-  auto *adapter = allocate_gamepad("ds5"sv, LI_CTYPE_PS, capabilities, 1, 4);
-  ASSERT_NE(adapter, nullptr);
-  ASSERT_NE(adapter->gamepad(), nullptr);
-  EXPECT_EQ(context()->runtime->active_device_count(), active_devices_before_gamepad + 1);
-
-  EXPECT_EQ(adapter->gamepad()->profile().gamepad_kind, lvh::GamepadProfileKind::dualsense);
-  EXPECT_TRUE(adapter->gamepad()->profile().name.starts_with("Sunshine "));
-  const auto &metadata = adapter->gamepad()->metadata();
-  EXPECT_EQ(metadata.global_index, 1);
-  EXPECT_EQ(metadata.client_relative_index, 4);
-  EXPECT_EQ(metadata.client_type, lvh::ClientControllerType::playstation);
-  EXPECT_TRUE(metadata.has_motion_sensors);
-  EXPECT_TRUE(metadata.has_touchpad);
-  EXPECT_TRUE(metadata.has_rgb_led);
-  EXPECT_TRUE(metadata.has_battery);
-  EXPECT_EQ(metadata.stable_id, "02:00:00:00:00:01");
-
-  const std::uint32_t button_flags = platf::DPAD_UP | platf::DPAD_DOWN | platf::DPAD_LEFT | platf::DPAD_RIGHT | platf::START | platf::BACK |
-                                     platf::LEFT_STICK | platf::RIGHT_STICK | platf::LEFT_BUTTON | platf::RIGHT_BUTTON | platf::HOME |
-                                     platf::A | platf::B | platf::X | platf::Y | platf::MISC_BUTTON;
-  const platf::gamepad_state_t input_state {
-    button_flags,
-    128,
-    255,
-    std::numeric_limits<std::int16_t>::min(),
-    std::numeric_limits<std::int16_t>::max(),
-    -16384,
-    0,
-  };
-  platf::virtualhid::gamepad_update(*context(), 1, input_state);
-
-  const auto &state = adapter->state();
-  using enum lvh::GamepadButton;
-  for (const auto button : {dpad_up, dpad_down, dpad_left, dpad_right, start, back, left_stick, right_stick, left_shoulder, right_shoulder, guide, a, b, x, y, misc1, touchpad}) {
-    EXPECT_TRUE(state.buttons.test(button));
-  }
-  EXPECT_FLOAT_EQ(state.left_stick.x, -1.0F);
-  EXPECT_FLOAT_EQ(state.left_stick.y, 1.0F);
-  EXPECT_FLOAT_EQ(state.right_stick.x, -0.5F);
-  EXPECT_FLOAT_EQ(state.right_stick.y, 0.0F);
-  EXPECT_FLOAT_EQ(state.left_trigger, 128.0F / 255.0F);
-  EXPECT_FLOAT_EQ(state.right_trigger, 1.0F);
-
-  config::input.ds4_back_as_touchpad_click = false;
-  platf::virtualhid::gamepad_update(*context(), 1, {platf::BACK, 0, 0, 0, 0, 0, 0});
-  EXPECT_FALSE(adapter->state().buttons.test(touchpad));
-
-  platf::virtualhid::free_gamepad(*context(), 1);
-  EXPECT_FALSE(platf::virtualhid::has_gamepad(*context(), 1));
-  EXPECT_EQ(context()->runtime->active_device_count(), active_devices_before_gamepad);
-  platf::virtualhid::free_gamepad(*context(), 1);
-  platf::virtualhid::gamepad_update(*context(), 1, input_state);
-}
-
-TEST_P(VirtualHidAutoProfileTest, SelectsProfileFromClientMetadata) {
-  const auto &test_case = GetParam();
-  auto *adapter = allocate_gamepad("auto"sv, test_case.type, test_case.capabilities);
-  ASSERT_NE(adapter, nullptr);
-  ASSERT_NE(adapter->gamepad(), nullptr);
-  EXPECT_EQ(adapter->gamepad()->profile().gamepad_kind, test_case.expected);
-}
-
-INSTANTIATE_TEST_SUITE_P(
-  ClientMetadata,
-  VirtualHidAutoProfileTest,
-  ::testing::Values(
-    auto_profile_case_t {"PlayStation", LI_CTYPE_PS, 0, lvh::GamepadProfileKind::dualsense},
-    auto_profile_case_t {"Nintendo", LI_CTYPE_NINTENDO, 0, lvh::GamepadProfileKind::switch_pro},
-    auto_profile_case_t {"Xbox", LI_CTYPE_XBOX, 0, lvh::GamepadProfileKind::xbox_series},
-    auto_profile_case_t {"UnknownMotion", LI_CTYPE_UNKNOWN, LI_CCAP_ACCEL, lvh::GamepadProfileKind::dualsense},
-    auto_profile_case_t {"UnknownTouchpad", LI_CTYPE_UNKNOWN, LI_CCAP_TOUCHPAD, lvh::GamepadProfileKind::dualsense},
-    auto_profile_case_t {"UnknownDefault", LI_CTYPE_UNKNOWN, 0, lvh::GamepadProfileKind::xbox_series}
-  ),
-  [](const ::testing::TestParamInfo<auto_profile_case_t> &info) {
-    return info.param.name;
-  }
-);
-
-TEST_F(VirtualHidDeviceTest, FallsBackForUnknownManualProfileAndRandomizesPlayStationIdentity) {
-  auto *fallback = allocate_gamepad("not-a-profile"sv, LI_CTYPE_UNKNOWN, 0, 0);
-  ASSERT_NE(fallback, nullptr);
-  EXPECT_EQ(fallback->gamepad()->profile().gamepad_kind, lvh::GamepadProfileKind::xbox_series);
-  EXPECT_EQ(fallback->gamepad()->metadata().client_type, lvh::ClientControllerType::unknown);
-  EXPECT_EQ(fallback->gamepad()->metadata().stable_id, "sunshine-gamepad-0");
-
-  config::input.virtualhid_randomize_mac = true;
-  auto *randomized = allocate_gamepad("ds4"sv, LI_CTYPE_PS, 0, 1);
-  ASSERT_NE(randomized, nullptr);
-  const auto &stable_id = randomized->gamepad()->metadata().stable_id;
-  EXPECT_EQ(stable_id.size(), 17);
-  EXPECT_TRUE(stable_id.starts_with("02:00:"));
-}
-
-TEST_F(VirtualHidDeviceTest, RoutesAndDeduplicatesGamepadFeedback) {
-  auto *adapter = allocate_gamepad("xseries"sv, LI_CTYPE_XBOX);
-  ASSERT_NE(adapter, nullptr);
-
-  lvh::GamepadOutput output;
-  output.kind = lvh::GamepadOutputKind::rumble;
-  output.low_frequency_rumble = 100;
-  output.high_frequency_rumble = 200;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  auto feedback = feedback_queue()->pop(10ms);
-  ASSERT_TRUE(feedback);
-  EXPECT_EQ(feedback->type, platf::gamepad_feedback_e::rumble);
-  EXPECT_EQ(feedback->id, 3);
-  EXPECT_EQ(feedback->data.rumble.lowfreq, 100);
-  EXPECT_EQ(feedback->data.rumble.highfreq, 200);
-
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  EXPECT_FALSE(feedback_queue()->pop(0ms));
-  output.high_frequency_rumble = 201;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  EXPECT_TRUE(feedback_queue()->pop(10ms));
-
-  output.kind = lvh::GamepadOutputKind::trigger_rumble;
-  output.left_trigger_rumble = 300;
-  output.right_trigger_rumble = 400;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  feedback = feedback_queue()->pop(10ms);
-  ASSERT_TRUE(feedback);
-  EXPECT_EQ(feedback->type, platf::gamepad_feedback_e::rumble_triggers);
-  EXPECT_EQ(feedback->data.rumble_triggers.left_trigger, 300);
-  EXPECT_EQ(feedback->data.rumble_triggers.right_trigger, 400);
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  EXPECT_FALSE(feedback_queue()->pop(0ms));
-  ++output.right_trigger_rumble;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  EXPECT_TRUE(feedback_queue()->pop(10ms));
-
-  output.kind = lvh::GamepadOutputKind::rgb_led;
-  output.red = 10;
-  output.green = 20;
-  output.blue = 30;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  feedback = feedback_queue()->pop(10ms);
-  ASSERT_TRUE(feedback);
-  EXPECT_EQ(feedback->type, platf::gamepad_feedback_e::set_rgb_led);
-  EXPECT_EQ(feedback->data.rgb_led.r, 10);
-  EXPECT_EQ(feedback->data.rgb_led.g, 20);
-  EXPECT_EQ(feedback->data.rgb_led.b, 30);
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  EXPECT_FALSE(feedback_queue()->pop(0ms));
-  ++output.blue;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  EXPECT_TRUE(feedback_queue()->pop(10ms));
-
-  output.kind = lvh::GamepadOutputKind::player_leds;
-  output.player_leds = {true, false, true, false};
-  output.flashing_player_leds = {false, true, false, true};
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  feedback = feedback_queue()->pop(10ms);
-  ASSERT_TRUE(feedback);
-  EXPECT_EQ(feedback->type, platf::gamepad_feedback_e::set_player_leds);
-  EXPECT_EQ(feedback->data.player_leds.solid, 0x05);
-  EXPECT_EQ(feedback->data.player_leds.flashing, 0x0A);
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  EXPECT_FALSE(feedback_queue()->pop(0ms));
-  output.player_leds[3] = true;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  feedback = feedback_queue()->pop(10ms);
-  ASSERT_TRUE(feedback);
-  EXPECT_EQ(feedback->data.player_leds.solid, 0x0D);
-
-  output.kind = lvh::GamepadOutputKind::adaptive_triggers;
-  output.adaptive_trigger_flags = 5;
-  output.left_trigger_effect_type = 6;
-  output.right_trigger_effect_type = 7;
-  output.left_trigger_effect = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-  output.right_trigger_effect = {9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  feedback = feedback_queue()->pop(10ms);
-  ASSERT_TRUE(feedback);
-  EXPECT_EQ(feedback->type, platf::gamepad_feedback_e::set_adaptive_triggers);
-  EXPECT_EQ(feedback->data.adaptive_triggers.event_flags, 5);
-  EXPECT_EQ(feedback->data.adaptive_triggers.type_left, 6);
-  EXPECT_EQ(feedback->data.adaptive_triggers.type_right, 7);
-  EXPECT_EQ(feedback->data.adaptive_triggers.left, output.left_trigger_effect);
-  EXPECT_EQ(feedback->data.adaptive_triggers.right, output.right_trigger_effect);
-
-  auto resumed_feedback = mail::man->queue<platf::gamepad_feedback_msg_t>("virtualhid-input-test-resumed-feedback");
-  ASSERT_EQ(platf::virtualhid::rebind_gamepad(*context(), {0, 7}, resumed_feedback), 0);
-  output.kind = lvh::GamepadOutputKind::rumble;
-  output.low_frequency_rumble = 100;
-  output.high_frequency_rumble = 201;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  feedback = resumed_feedback->pop(10ms);
-  ASSERT_TRUE(feedback);
-  EXPECT_EQ(feedback->type, platf::gamepad_feedback_e::rumble);
-  EXPECT_EQ(feedback->id, 7);
-  EXPECT_FALSE(feedback_queue()->pop(0ms));
-
-  output.kind = lvh::GamepadOutputKind::raw_report;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-  EXPECT_FALSE(feedback_queue()->pop(0ms));
-
-  platf::virtualhid::free_gamepad(*context(), 0);
-  const platf::gamepad_id_t id {0, 0};
-  const platf::gamepad_arrival_t metadata {LI_CTYPE_XBOX, 0, 0};
-  ASSERT_EQ(platf::virtualhid::alloc_gamepad(*context(), id, metadata, nullptr), 0);
-  adapter = platf::virtualhid::gamepad_adapter_for_testing(*context(), 0);
-  ASSERT_NE(adapter, nullptr);
-  output.kind = lvh::GamepadOutputKind::rumble;
-  ASSERT_TRUE(adapter->dispatch_output(output).ok());
-}
-
-TEST_F(VirtualHidDeviceTest, TranslatesGamepadTouchMotionAndBattery) {
-  const auto capabilities = static_cast<std::uint16_t>(LI_CCAP_ACCEL | LI_CCAP_GYRO | LI_CCAP_TOUCHPAD | LI_CCAP_BATTERY_STATE);
-  auto *adapter = allocate_gamepad("ds5"sv, LI_CTYPE_PS, capabilities);
-  ASSERT_NE(adapter, nullptr);
-  EXPECT_TRUE(feedback_queue()->pop(10ms));
-  EXPECT_TRUE(feedback_queue()->pop(10ms));
-
-  platf::gamepad_touch_t touch {{0, 3}, LI_TOUCH_EVENT_DOWN, 10, -0.25F, 1.25F, 1.0F};
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  EXPECT_EQ(adapter->state().touchpad_contacts[0].id, 0);
-  EXPECT_TRUE(adapter->state().touchpad_contacts[0].active);
-  EXPECT_FLOAT_EQ(adapter->state().touchpad_contacts[0].x, 0.0F);
-  EXPECT_FLOAT_EQ(adapter->state().touchpad_contacts[0].y, 1.0F);
-
-  touch.eventType = LI_TOUCH_EVENT_MOVE;
-  touch.pressure = 0.25F;
-  touch.x = 0.4F;
-  touch.y = 0.6F;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  EXPECT_FALSE(adapter->state().touchpad_contacts[0].active);
-  EXPECT_FLOAT_EQ(adapter->state().touchpad_contacts[0].x, 0.4F);
-
-  touch.eventType = LI_TOUCH_EVENT_DOWN;
-  touch.pointerId = 11;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  const auto full_touch_submit_count = adapter->gamepad()->submit_count();
-  touch.pointerId = 12;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  EXPECT_EQ(adapter->gamepad()->submit_count(), full_touch_submit_count);
-
-  touch.eventType = LI_TOUCH_EVENT_MOVE;
-  touch.pointerId = 99;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  EXPECT_EQ(adapter->gamepad()->submit_count(), full_touch_submit_count);
-  touch.eventType = 0xFF;
-  touch.pointerId = 10;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  EXPECT_EQ(adapter->gamepad()->submit_count(), full_touch_submit_count);
-
-  touch.eventType = LI_TOUCH_EVENT_CANCEL;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  EXPECT_FALSE(adapter->state().touchpad_contacts[0].active);
-  touch.eventType = LI_TOUCH_EVENT_UP;
-  touch.pointerId = 11;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  EXPECT_FALSE(adapter->state().touchpad_contacts[1].active);
-
-  touch.eventType = LI_TOUCH_EVENT_DOWN;
-  touch.pointerId = 20;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  touch.pointerId = 21;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  touch.eventType = LI_TOUCH_EVENT_CANCEL_ALL;
-  platf::virtualhid::gamepad_touch(*context(), touch);
-  EXPECT_FALSE(adapter->state().touchpad_contacts[0].active);
-  EXPECT_FALSE(adapter->state().touchpad_contacts[1].active);
-
-  const platf::gamepad_motion_t acceleration {{0, 3}, LI_MOTION_TYPE_ACCEL, 1.0F, 2.0F, 3.0F};
-  platf::virtualhid::gamepad_motion(*context(), acceleration);
-  ASSERT_TRUE(adapter->state().acceleration);
-  EXPECT_FLOAT_EQ(adapter->state().acceleration->x, 1.0F);
-  const platf::gamepad_motion_t gyroscope {{0, 3}, LI_MOTION_TYPE_GYRO, 4.0F, 5.0F, 6.0F};
-  platf::virtualhid::gamepad_motion(*context(), gyroscope);
-  ASSERT_TRUE(adapter->state().gyroscope);
-  EXPECT_FLOAT_EQ(adapter->state().gyroscope->z, 6.0F);
-  const auto motion_submit_count = adapter->gamepad()->submit_count();
-  platf::virtualhid::gamepad_motion(*context(), {{0, 3}, 0xFF, 0.0F, 0.0F, 0.0F});
-  platf::virtualhid::gamepad_motion(*context(), {{7, 3}, LI_MOTION_TYPE_ACCEL, 0.0F, 0.0F, 0.0F});
-  EXPECT_EQ(adapter->gamepad()->submit_count(), motion_submit_count);
-
-  platf::virtualhid::gamepad_battery(*context(), {{0, 3}, LI_BATTERY_STATE_DISCHARGING, 75});
-  ASSERT_TRUE(adapter->state().battery);
-  EXPECT_EQ(adapter->state().battery->state, lvh::GamepadBatteryState::discharging);
-  EXPECT_EQ(adapter->state().battery->percentage, 75);
-  platf::virtualhid::gamepad_battery(*context(), {{0, 3}, LI_BATTERY_STATE_CHARGING, LI_BATTERY_PERCENTAGE_UNKNOWN});
-  EXPECT_EQ(adapter->state().battery->state, lvh::GamepadBatteryState::charging);
-  EXPECT_EQ(adapter->state().battery->percentage, 100);
-  platf::virtualhid::gamepad_battery(*context(), {{0, 3}, LI_BATTERY_STATE_FULL, 120});
-  EXPECT_EQ(adapter->state().battery->state, lvh::GamepadBatteryState::full);
-  EXPECT_EQ(adapter->state().battery->percentage, 100);
-  platf::virtualhid::gamepad_battery(*context(), {{0, 3}, LI_BATTERY_STATE_NOT_CHARGING, 50});
-  EXPECT_EQ(adapter->state().battery->state, lvh::GamepadBatteryState::charging_error);
-  platf::virtualhid::gamepad_battery(*context(), {{0, 3}, LI_BATTERY_STATE_UNKNOWN, 0});
-  EXPECT_FALSE(adapter->state().battery);
-  platf::virtualhid::gamepad_battery(*context(), {{0, 3}, LI_BATTERY_STATE_NOT_PRESENT, 0});
-  EXPECT_FALSE(adapter->state().battery);
-  platf::virtualhid::gamepad_battery(*context(), {{7, 3}, LI_BATTERY_STATE_FULL, 100});
-
-  const auto unsupported_capabilities = static_cast<std::uint16_t>(LI_CCAP_ACCEL | LI_CCAP_TOUCHPAD | LI_CCAP_RGB_LED);
-  auto *unsupported = allocate_gamepad("xseries"sv, LI_CTYPE_XBOX, unsupported_capabilities, 1);
-  ASSERT_NE(unsupported, nullptr);
-  const auto unsupported_count = unsupported->gamepad()->submit_count();
-  platf::virtualhid::gamepad_touch(*context(), {{1, 3}, LI_TOUCH_EVENT_DOWN, 0, 0.5F, 0.5F, 1.0F});
-  EXPECT_EQ(unsupported->gamepad()->submit_count(), unsupported_count);
-}
-
-TEST_F(VirtualHidDeviceTest, PreservesAuxiliaryGamepadStateAcrossControlUpdates) {
-  const auto capabilities = static_cast<std::uint16_t>(LI_CCAP_ACCEL | LI_CCAP_GYRO | LI_CCAP_TOUCHPAD | LI_CCAP_BATTERY_STATE);
-  auto *adapter = allocate_gamepad("ds5"sv, LI_CTYPE_PS, capabilities);
-  ASSERT_NE(adapter, nullptr);
-  EXPECT_TRUE(feedback_queue()->pop(10ms));
-  EXPECT_TRUE(feedback_queue()->pop(10ms));
-
-  platf::virtualhid::gamepad_motion(*context(), {{0, 3}, LI_MOTION_TYPE_ACCEL, 0.0F, 9.80665F, 0.0F});
-  platf::virtualhid::gamepad_motion(*context(), {{0, 3}, LI_MOTION_TYPE_GYRO, -0.2F, -0.5F, 0.0F});
-  platf::virtualhid::gamepad_touch(*context(), {{0, 3}, LI_TOUCH_EVENT_DOWN, 10, 0.25F, 0.75F, 1.0F});
-  platf::virtualhid::gamepad_battery(*context(), {{0, 3}, LI_BATTERY_STATE_DISCHARGING, 75});
-
-  platf::virtualhid::gamepad_update(*context(), 0, {platf::A, 255, 0, 0, 0, 0, 0});
-
-  const auto &state = adapter->state();
-  EXPECT_TRUE(state.buttons.test(lvh::GamepadButton::a));
-  ASSERT_TRUE(state.acceleration);
-  EXPECT_FLOAT_EQ(state.acceleration->x, 0.0F);
-  EXPECT_FLOAT_EQ(state.acceleration->y, 9.80665F);
-  EXPECT_FLOAT_EQ(state.acceleration->z, 0.0F);
-  ASSERT_TRUE(state.gyroscope);
-  EXPECT_FLOAT_EQ(state.gyroscope->x, -0.2F);
-  EXPECT_FLOAT_EQ(state.gyroscope->y, -0.5F);
-  EXPECT_FLOAT_EQ(state.gyroscope->z, 0.0F);
-  EXPECT_TRUE(state.touchpad_contacts[0].active);
-  EXPECT_FLOAT_EQ(state.touchpad_contacts[0].x, 0.25F);
-  EXPECT_FLOAT_EQ(state.touchpad_contacts[0].y, 0.75F);
-  ASSERT_TRUE(state.battery);
-  EXPECT_EQ(state.battery->state, lvh::GamepadBatteryState::discharging);
-  EXPECT_EQ(state.battery->percentage, 75);
 }
 
 TEST_F(VirtualHidDeviceTest, TranslatesMouseAndKeyboardInput) {
@@ -1143,60 +529,6 @@ TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   const auto keyboard_count = platform_context.keyboard->submit_count();
   platf::unicode(platform_input, text.data(), static_cast<int>(text.size()));
   EXPECT_EQ(platform_context.keyboard->submit_count(), keyboard_count + 1);
-
-  config::input.gamepad = "ds5";
-  const auto capabilities = static_cast<std::uint16_t>(LI_CCAP_ACCEL | LI_CCAP_GYRO | LI_CCAP_TOUCHPAD | LI_CCAP_BATTERY_STATE);
-  const platf::gamepad_id_t gamepad_id {0, 2};
-  const platf::gamepad_arrival_t gamepad_metadata {LI_CTYPE_PS, capabilities, 0};
-  ASSERT_EQ(platf::alloc_gamepad(platform_input, gamepad_id, gamepad_metadata, feedback_queue()), 0);
-  auto *adapter = platf::virtualhid::gamepad_adapter_for_testing(platform_context, 0);
-  ASSERT_NE(adapter, nullptr);
-  platf::gamepad_update(platform_input, 0, {platf::A, 255, 0, 0, 0, 0, 0});
-  EXPECT_TRUE(adapter->state().buttons.test(lvh::GamepadButton::a));
-  platf::gamepad_touch(platform_input, {{0, 2}, LI_TOUCH_EVENT_DOWN, 1, 0.25F, 0.5F, 1.0F});
-  EXPECT_TRUE(adapter->state().touchpad_contacts[0].active);
-  platf::gamepad_motion(platform_input, {{0, 2}, LI_MOTION_TYPE_ACCEL, 1.0F, 2.0F, 3.0F});
-  EXPECT_TRUE(adapter->state().acceleration.has_value());
-  platf::gamepad_battery(platform_input, {{0, 2}, LI_BATTERY_STATE_FULL, 100});
-  EXPECT_TRUE(adapter->state().battery.has_value());
-
-  const auto &supported = platf::supported_gamepads(std::addressof(platform_input));
-  ASSERT_FALSE(supported.empty());
-#ifdef __APPLE__
-  const auto licensed = lvh::get_license_status().license.licensed();
-  EXPECT_EQ(supported.front().is_enabled, licensed);
-  EXPECT_EQ(supported.front().reason_disabled, licensed ? "" : "gamepads.virtualhid-license-invalid");
-#else
-  EXPECT_TRUE(supported.front().is_enabled);
-#endif
-  EXPECT_FALSE(platf::supported_gamepads(nullptr).empty());
-#ifdef _WIN32
-  config::input.gamepad_driver = config::GAMEPAD_DRIVER_VIGEMBUS;
-  const auto &vigembus_gamepads = platf::supported_gamepads(std::addressof(platform_input));
-  config::input.gamepad_driver = config::GAMEPAD_DRIVER_ALL;
-  ASSERT_EQ(vigembus_gamepads.size(), 3U);
-  EXPECT_EQ(vigembus_gamepads[0].name, "auto");
-  EXPECT_EQ(vigembus_gamepads[1].name, "x360");
-  EXPECT_EQ(vigembus_gamepads[2].name, "ds4");
-#endif
-#ifdef __APPLE__
-  const auto controller_touch = platf::get_capabilities() & platf::platform_caps::controller_touch;
-  if (lvh::get_license_status().license.licensed()) {
-    EXPECT_NE(controller_touch, 0U);
-  } else {
-    EXPECT_EQ(controller_touch, 0U);
-  }
-#else
-  EXPECT_NE(platf::get_capabilities() & platf::platform_caps::controller_touch, 0U);
-#endif
-
-  platf::free_gamepad(platform_input, 0);
-  EXPECT_FALSE(platf::virtualhid::has_gamepad(platform_context, 0));
-  platf::free_gamepad(platform_input, 0);
-  platf::gamepad_update(platform_input, 0, {});
-  platf::gamepad_touch(platform_input, {{0, 2}, LI_TOUCH_EVENT_DOWN, 1, 0.25F, 0.5F, 1.0F});
-  platf::gamepad_motion(platform_input, {{0, 2}, LI_MOTION_TYPE_ACCEL, 1.0F, 2.0F, 3.0F});
-  platf::gamepad_battery(platform_input, {{0, 2}, LI_BATTERY_STATE_FULL, 100});
 
   auto platform_client = platf::allocate_client_input_context(platform_input);
   ASSERT_NE(platform_client, nullptr);

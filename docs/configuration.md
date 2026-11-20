@@ -1,13 +1,5 @@
 # Configuration
 
-@admonition{ Host authority |:| @htmlonly
-By providing the host authority (URI + port), you can easily open each configuration option in the config UI.
-<br>
-<script src="configuration.js"></script>
-<strong>Host authority: </strong> <input type="text" id="host-authority" value="localhost:47990">
-@endhtmlonly
-}
-
 Sunshine will work with the default settings for most users. In some cases you may want to configure Sunshine further.
 
 The default location for the configuration file is listed below. You can use another location if you
@@ -31,23 +23,21 @@ location by modifying the configuration file.
 | macOS   | @code{}~/.config/sunshine@endcode               |
 | Windows | @code{}%ProgramFiles%\\Sunshine\\config@endcode |
 
-Although it is recommended to use the configuration UI, it is possible manually configure Sunshine by
-editing the `conf` file in a text editor. Use the examples as reference.
+Configure Sunshine by editing the `conf` file in a text editor. Use the examples as reference.
 
-The web UI groups these settings into the sidebar categories documented below. Encoder categories are shown only when
+Settings are grouped into the categories documented below. Encoder categories are shown only when
 supported on the current platform.
 
 ## Permissions on every platform
 
-Open **Troubleshooting > Permissions** in the Web UI to see required and optional access for the current platform.
-The Home page flags verifiable required access that is missing. Sunshine checks for access granted while it is running
-and restarts once after all verifiable required access is available. On Unix, adding a user to a group takes effect only
-after a new login session; Sunshine cannot detect the new group membership in the existing process.
+The HTTPS management API exposes required and optional permissions through `/api/permissions`; clients can request
+supported permission actions through `/api/permissions/request`. Sunshine checks access while running and restarts once
+after all verifiable required access is available. On Unix, adding a user to a group takes effect only after a new login
+session; Sunshine cannot detect the new group membership in the existing process.
 
-On Linux and FreeBSD, virtual keyboard, mouse, and gamepad input need read and write access to `/dev/uinput` (Linux
-also checks `/dev/input/uinput`). The Web UI shows setup steps if that access is missing. On Windows, Sunshine checks
-whether its account can list and create files in the `config` directory beside the executable. Windows provides no
-consent prompt for directory ACLs, so the Web UI shows setup steps for correcting access.
+On Linux and FreeBSD, virtual keyboard and mouse input need read and write access to `/dev/uinput` (Linux
+also checks `/dev/input/uinput`). On Windows, Sunshine checks whether its account can list and create files in the
+`config` directory beside the executable. Windows provides no consent prompt for directory ACLs.
 
 ## General
 
@@ -301,258 +291,6 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
 </table>
 
 ## Input
-
-### controller
-
-<table>
-    <tr>
-        <td>Description</td>
-        <td colspan="2">
-            Whether to allow controller input from the client.
-        </td>
-    </tr>
-    <tr>
-        <td>Default</td>
-        <td colspan="2">@code{}
-            enabled
-            @endcode</td>
-    </tr>
-    <tr>
-        <td>Example</td>
-        <td colspan="2">@code{}
-            controller = enabled
-            @endcode</td>
-    </tr>
-</table>
-
-### gamepad_driver
-
-<table>
-    <tr>
-        <td>Description</td>
-        <td colspan="2">
-            Controls which virtual gamepad backend Sunshine may use on Windows and macOS. On Windows, the Web UI and
-            startup notification request a choice while this option is not set. If Sunshine detects an active Virtual
-            HID Broker license on Windows, it automatically sets this option to `all` when it is missing.
-            @warning{ViGEmBus has limited gamepad features, supports only Xbox 360 and DualShock 4 emulation, and has
-            reached end of life. Selecting `vigembus` also suppresses Virtual HID Broker startup notifications.}
-            @note{`all` and `vigembus` apply only to Windows. On macOS, an unset value uses Virtual HID Broker.}
-        </td>
-    </tr>
-    <tr>
-        <td>Default</td>
-        <td colspan="2">@code{}
-            not set
-            @endcode</td>
-    </tr>
-    <tr>
-        <td>Example</td>
-        <td colspan="2">@code{}
-            gamepad_driver = all
-            @endcode</td>
-    </tr>
-    <tr>
-        <td rowspan="4">Choices</td>
-        <td>all</td>
-        <td>Windows only: prefer Virtual HID Broker when it is available and licensed, with ViGEmBus as a limited fallback.</td>
-    </tr>
-    <tr>
-        <td>virtualhid</td>
-        <td>Use Virtual HID Broker for gamepads. An active paid license is required; Windows ViGEmBus fallback is disabled.</td>
-    </tr>
-    <tr>
-        <td>vigembus</td>
-        <td>Windows only: use ViGEmBus for gamepads and hide Virtual HID Broker status and licensing details.</td>
-    </tr>
-    <tr>
-        <td>none</td>
-        <td>Disable virtual gamepads on Windows and macOS without changing keyboard or mouse input. Suppress broker and driver choice notices.</td>
-    </tr>
-</table>
-
-### gamepad
-
-<table>
-    <tr>
-        <td>Description</td>
-        <td colspan="2">
-            The type of gamepad to emulate on the host. Automatic selection uses the controller type
-            reported by the client. If the type is unknown, Sunshine can select a PlayStation-style
-            controller from reported motion or touchpad support; otherwise it uses an Xbox-style controller.
-            @note{When gamepad_driver is `vigembus` on Windows, only auto, x360, and ds4 are available.}
-        </td>
-    </tr>
-    <tr>
-        <td>Default</td>
-        <td colspan="2">@code{}
-            auto
-            @endcode</td>
-    </tr>
-    <tr>
-        <td>Example</td>
-        <td colspan="2">@code{}
-            gamepad = auto
-            @endcode</td>
-    </tr>
-    <tr>
-        <td rowspan="7">Choices</td>
-        <td>generic</td>
-        <td>Generic HID gamepad</td>
-    </tr>
-    <tr>
-        <td>ds4</td>
-        <td>DualShock 4 controller (PS4)</td>
-    </tr>
-    <tr>
-        <td>ds5</td>
-        <td>DualShock 5 controller (PS5)</td>
-    </tr>
-    <tr>
-        <td>switch</td>
-        <td>Switch Pro controller</td>
-    </tr>
-    <tr>
-        <td>x360</td>
-        <td>Xbox 360 controller</td>
-    </tr>
-    <tr>
-        <td>xone</td>
-        <td>Xbox One controller</td>
-    </tr>
-    <tr>
-        <td>xseries</td>
-        <td>Xbox Series controller</td>
-    </tr>
-</table>
-
-### ds4_back_as_touchpad_click
-
-<table>
-    <tr>
-        <td>Description</td>
-        <td colspan="2">
-            Allow Select/Back inputs to also trigger a PlayStation-style gamepad touchpad click. Useful
-            for clients looking to emulate touchpad click on XInput devices.
-            @hint{Applies to ds4, ds5, and automatically selected PlayStation-style gamepads.}
-        </td>
-    </tr>
-    <tr>
-        <td>Default</td>
-        <td colspan="2">@code{}
-            enabled
-            @endcode</td>
-    </tr>
-    <tr>
-        <td>Example</td>
-        <td colspan="2">@code{}
-            ds4_back_as_touchpad_click = enabled
-            @endcode</td>
-    </tr>
-</table>
-
-### motion_as_ds4
-
-<table>
-    <tr>
-        <td>Description</td>
-        <td colspan="2">
-            If a client reports that a connected gamepad has motion sensor support, emulate it on the
-            host as a PlayStation-style controller.
-            <br>
-            <br>
-            When disabled, motion sensors will not be taken into account during gamepad type selection.
-            @hint{Only applies when gamepad is set to auto.}
-        </td>
-    </tr>
-    <tr>
-        <td>Default</td>
-        <td colspan="2">@code{}
-            enabled
-            @endcode</td>
-    </tr>
-    <tr>
-        <td>Example</td>
-        <td colspan="2">@code{}
-            motion_as_ds4 = enabled
-            @endcode</td>
-    </tr>
-</table>
-
-### touchpad_as_ds4
-
-<table>
-    <tr>
-        <td>Description</td>
-        <td colspan="2">
-            If a client reports that a connected gamepad has a touchpad, emulate it on the host as a
-            PlayStation-style controller.
-            <br>
-            <br>
-            When disabled, touchpad presence will not be taken into account during gamepad type selection.
-            @hint{Only applies when gamepad is set to auto.}
-        </td>
-    </tr>
-    <tr>
-        <td>Default</td>
-        <td colspan="2">@code{}
-            enabled
-            @endcode</td>
-    </tr>
-    <tr>
-        <td>Example</td>
-        <td colspan="2">@code{}
-            touchpad_as_ds4 = enabled
-            @endcode</td>
-    </tr>
-</table>
-
-### virtualhid_randomize_mac
-
-<table>
-    <tr>
-        <td>Description</td>
-        <td colspan="2">
-            Randomize the MAC address for PlayStation-style virtual controllers created by libvirtualhid.
-        </td>
-    </tr>
-    <tr>
-        <td>Default</td>
-        <td colspan="2">@code{}
-            enabled
-            @endcode</td>
-    </tr>
-    <tr>
-        <td>Example</td>
-        <td colspan="2">@code{}
-            virtualhid_randomize_mac = enabled
-            @endcode</td>
-    </tr>
-</table>
-
-### back_button_timeout
-
-<table>
-    <tr>
-        <td>Description</td>
-        <td colspan="2">
-            If the Back/Select button is held down for the specified number of milliseconds,
-            a Home/Guide button press is emulated.
-            @tip{If back_button_timeout < 0, then the Home/Guide button will not be emulated.}
-        </td>
-    </tr>
-    <tr>
-        <td>Default</td>
-        <td colspan="2">@code{}
-            -1
-            @endcode</td>
-    </tr>
-    <tr>
-        <td>Example</td>
-        <td colspan="2">@code{}
-            back_button_timeout = 2000
-            @endcode</td>
-    </tr>
-</table>
 
 ### keyboard
 

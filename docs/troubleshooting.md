@@ -3,7 +3,7 @@
 ## General
 
 ### Forgotten Credentials
-If you forgot your credentials to the web UI, try this.
+If you forgot your Sunshine management credentials, try this.
 
 @tabs_grouped{linux-package|:|
   @tab{General |:| ```bash
@@ -36,18 +36,10 @@ Use Plasma 6.5.1 or later, which fixes changing a device's assigned output. Disp
 left of or above the desktop origin are supported. Other Wayland compositors retain their device mapping
 settings; assign Sunshine's virtual touchscreen and pen tablet through the compositor's input configuration.
 
-### Web UI Access
-Can't access the web UI?
+### HTTPS Management API Access
+Can't access the HTTPS management API?
 
 1. Check firewall rules.
-
-### Controller works on Steam but not in games
-One trick might be to change Steam settings and check or uncheck the configuration to support Xbox/PlayStation
-controllers and leave only support for Generic controllers.
-
-Also, if you have many controllers already directly connected to the host, it might help to disable them so that the
-Sunshine-provided controller (connected to the guest) is the "first" one. In Linux this can be achieved on USB
-devices by finding the device in `/sys/bus/usb/devices/` and writing `0` to the `authorized` file.
 
 ### Network performance test
 
@@ -215,18 +207,6 @@ flatpak permission-set kde-authorized remote-desktop dev.lizardbyte.app.Sunshine
 After installation, the `udev` rules need to be reloaded. Our post-install script tries to do this for you
 automatically, but if it fails, you may need to restart your system.
 
-Sunshine recreates virtual gamepad device nodes for each streaming session. Manual `chmod` or `setfacl`
-changes therefore disappear when the client reconnects. Confirm that the installed Sunshine rule contains the
-parent-property import and `libvirtualhid/uhid/*` match, then reload it and reapply it to existing gamepad nodes:
-
-```bash
-grep -R -E 'IMPORT\{parent\}="HID_\*"|ENV\{HID_PHYS\}=="libvirtualhid/uhid/\*"' \
-  /etc/udev/rules.d /usr/lib/udev/rules.d /lib/udev/rules.d 2>/dev/null
-sudo udevadm control --reload-rules
-sudo udevadm trigger --subsystem-match=hidraw
-sudo udevadm trigger --subsystem-match=input
-```
-
 If the input is still not working, you may need to add your user to the `input` group.
 
 ```bash
@@ -246,13 +226,8 @@ When the seat is not `seat0`, Sunshine appends the seat name to its virtual devi
 - libvirtualhid Keyboard (seat1)
 - libvirtualhid Mouse (seat1)
 - libvirtualhid Mouse (seat1) (Absolute)
-- Sunshine (libvirtualhid) X-Box 360 Controller (seat1)
 
 Sunshine creates two mouse devices: a relative one and an absolute one.
-
-> [!NOTE]
-> PlayStation gamepads always use Sony's native product name (`Wireless Controller`) so that Steam recognizes them,
-> so they do not carry a seat suffix.
 
 To assign Sunshine's virtual devices to the correct seat, create this udev rules file
 (/etc/udev/rules.d/72-sunshine-virtual-seat.rules):
@@ -321,18 +296,6 @@ Some users have reported stuttering issues when streaming games running within G
 
 ## macOS
 
-### No gamepad detected
-Confirm **Enable Gamepad Input** is on under **Configuration > Input**. Install
-[Virtual HID Broker](https://github.com/LizardByte/libvirtualhid/releases/latest) separately from Sunshine,
-using the macOS installer in its universal DMG. Confirm that `/Applications/VirtualHIDBroker.app` is allowed in
-**System Settings > Privacy & Security > Device Control and Data Access**, and activate a machine license under
-**Troubleshooting > Virtual HID Broker License** in Sunshine. The menu bar **Virtual HID Broker** submenu also
-shows license status and links for license management and downloads. If the broker or license is unavailable, the
-Troubleshooting page shows the broker response. Sunshine can show a startup notice when gamepad input is enabled
-and the broker or license is unavailable. Choose **None** under **Configuration > Input > Gamepad Backend** to disable
-virtual gamepads and that notice without affecting keyboard or mouse input. Reconnect the Moonlight session after choosing
-a different emulated gamepad profile.
-
 ### Dynamic session lookup failed
 If you get this error:
 
@@ -346,39 +309,14 @@ launchctl load -w /Library/LaunchAgents/org.freedesktop.dbus-session.plist
 
 ## Windows
 
-### No gamepad detected
-Sunshine supports two virtual gamepad backends on Windows. You can install the
-[Virtual HID Broker](https://github.com/LizardByte/libvirtualhid/releases/latest) separately as an optional paid upgrade.
-Its Windows package includes a broker service and user-mode driver for a Raw Input keyboard and mouse plus full virtual
-gamepad support. ViGEmBus is a limited alternative for Xbox 360 and DualShock 4 support that has reached end of life. If you use the
-[ViGEmBus fallback](https://github.com/nefarius/ViGEmBus/releases/latest), you must use version 1.17 or newer.
-
-When Virtual HID Broker is used, Sunshine requires libvirtualhid version `2026.914.1218.10` or newer.
-
-Virtual HID Broker adds Xbox One, Xbox Series, DualSense, Nintendo Switch Pro, and Generic gamepads, plus advanced
-controller features such as motion, touchpads, LEDs, and adaptive triggers when supported. Unlike the discontinued
-ViGEmBus project, Virtual HID Broker is actively developed and supported by the LizardByte team.
-
-An active paid Virtual HID Broker machine license is required before Sunshine can create driver-backed libvirtualhid
-devices, including gamepads and the Raw Input keyboard and mouse. Use the message on the Web UI home page, the startup
-tray notification, or **Get/Manage License** in the **Virtual HID Broker** tray submenu to open the license section on
-the Troubleshooting page. In **Configuration > Input**, select **All Available Drivers**, only **Virtual HID Broker**, or
-only **ViGEmBus**. Sunshine keeps prompting until this setting is saved, but automatically selects **All Available
-Drivers** when it detects an existing active Virtual HID Broker license. Whenever the Virtual HID Broker license is not
-valid, **All Available Drivers** falls back to a compatible ViGEmBus installation for Xbox 360 and DualShock 4 gamepads
-and to SendInput for keyboard and mouse. Selecting only **ViGEmBus** suppresses Virtual HID Broker startup notifications
-and hides its status and license details from the Troubleshooting page. Selecting **None** disables all virtual
-gamepads and suppresses broker and driver choice notices without affecting keyboard or mouse input.
-
-After installation, it is recommended to restart your computer.
-
 ### Games do not detect keyboard input
 With a compatible Virtual HID Broker and active license, Sunshine sends normal key transitions through a real HID
 keyboard so games using Raw Input can receive them. Unicode text input and keys outside the supported HID keyboard
 page continue to use Windows input injection. When the driver-backed keyboard cannot be created because the driver,
 broker, or license is unavailable, libvirtualhid falls back to SendInput.
 
-Check the libvirtualhid driver version and Virtual HID Broker license on the Web UI Troubleshooting page. Sunshine recreates the
+Sunshine supports libvirtualhid version `2026.914.1218.10` or newer. Check the driver version and Virtual HID Broker
+license through the management API. Sunshine recreates the
 shared keyboard and mouse after a successful license activation, validation, or deactivation, so you do not need to
 restart Sunshine merely to switch between the HID and SendInput paths.
 
@@ -388,8 +326,9 @@ through a real HID device so games using Raw Input can receive them. Absolute po
 injection. When the driver-backed mouse cannot be created, libvirtualhid falls back to SendInput; the Windows cursor may
 still move even though a game that listens only for Raw Input receives nothing.
 
-Check the libvirtualhid driver version and Virtual HID Broker license on the Web UI Troubleshooting page even when controller input
-is disabled. The same live refresh used by the keyboard path also switches the mouse between HID and SendInput without
+Sunshine supports libvirtualhid version `2026.914.1218.10` or newer. Check the driver version and Virtual HID Broker
+license through the management API. The same live refresh
+used by the keyboard path also switches the mouse between HID and SendInput without
 requiring a Sunshine restart.
 
 ### Permission denied

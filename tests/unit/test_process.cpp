@@ -587,7 +587,6 @@ protected:
     launch_session->width = 1920;
     launch_session->height = 1080;
     launch_session->fps = 60;
-    launch_session->gcmap = 0;
     launch_session->enable_hdr = false;
     launch_session->host_audio = false;
     launch_session->enable_sops = false;
@@ -793,7 +792,6 @@ TEST_F(ProcessRefreshTest, Refresh_PreservesRunningAppDuringReparse) {
   launch_session->width = 1920;
   launch_session->height = 1080;
   launch_session->fps = 60;
-  launch_session->gcmap = 0;
   launch_session->enable_hdr = false;
   launch_session->host_audio = false;
   launch_session->enable_sops = false;

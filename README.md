@@ -51,8 +51,7 @@
 Sunshine is a self-hosted game stream host for Moonlight.
 Offering low-latency, cloud gaming server capabilities with support for AMD, Intel, and Nvidia GPUs for hardware
 encoding. Software encoding is also available. You can connect to Sunshine from any Moonlight client on a variety of
-devices. A web UI is provided to allow configuration, and client pairing, from your favorite web browser. Pair from
-the local server or any mobile device.
+devices. This build does not include Sunshine's bundled Web UI; use the HTTPS management API from a separate PC UI.
 
 Visit the [Sunshine website](https://sunshine.lizardbyte.dev/) for downloads and an overview.
 
@@ -60,79 +59,6 @@ LizardByte has the full documentation hosted on [Read the Docs](https://docs.liz
 
 * [Stable Docs](https://docs.lizardbyte.dev/projects/sunshine/latest/)
 * [Beta Docs](https://docs.lizardbyte.dev/projects/sunshine/master/)
-
-## 🎮 Feature Compatibility
-
-<table>
-    <caption id="gamepad_emulation">Gamepad Emulation</caption>
-    <tr>
-        <th>Feature</th>
-        <th>FreeBSD</th>
-        <th>Linux</th>
-        <th>macOS</th>
-        <th>Windows</th>
-    </tr>
-    <tr>
-        <td colspan="5" align="center">
-        What type of gamepads can be emulated on the host.<br>
-        Clients may support other gamepads.
-        </td>
-    </tr>
-    <tr>
-        <td>Generic</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>DualShock / DS4 (PlayStation 4)</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>DualSense / DS5 (PlayStation 5)</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>Nintendo Switch Pro</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>Xbox 360</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>Xbox One</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-    <tr>
-        <td>Xbox Series</td>
-        <td>🟡<sup>1</sup></td>
-        <td>✅</td>
-        <td>✅<sup>2</sup></td>
-        <td>✅<sup>3</sup></td>
-    </tr>
-</table>
-
-> [!NOTE]
-> <sup>1</sup> Missing motion, touchpad input, battery state, RGB LEDs, adaptive triggers, and raw HID output reports.
-> <sup>2</sup> Requires the separately installed and licensed Virtual HID Broker.
-> <sup>3</sup> All profiles are available through the separately installed and licensed Virtual HID Broker. Xbox 360 and DualShock 4 can also use ViGEmBus.
 
 <table>
     <caption id="encoding_api">Encoding API</caption>

@@ -845,21 +845,12 @@ namespace config {
       {0x11, 0xA2},
       {0x12, 0xA4},
     },
-    -1ms,  // back_button_timeout
     500ms,  // key_repeat_delay
     std::chrono::duration<double> {1 / 24.9},  // key_repeat_period
-
-    "auto",  // Default gamepad profile.
-    {},  // Windows requests a backend choice; macOS defaults to Virtual HID Broker.
-    true,  // back as touchpad click enabled for PlayStation-style gamepads
-    true,  // client gamepads with motion events use PlayStation-style emulation
-    true,  // client gamepads with touchpads use PlayStation-style emulation
-    true,  // virtualhid_randomize_mac
 
     true,  // keyboard enabled
     false,  // key_rightalt_to_key_win
     true,  // mouse enabled
-    true,  // controller enabled
     true,  // always send scancodes
     true,  // high resolution scrolling
     true,  // native pen/touch support
@@ -1037,34 +1028,6 @@ namespace config {
     }
 
     return vars;
-  }
-
-  bool persist_config_option_if_missing(const std::string_view name, const std::string_view value) {
-    auto file_content = file_handler::read_file(sunshine.config_file.c_str());
-    if (parse_config(file_content).contains(std::string {name})) {
-      return false;
-    }
-
-    if (!file_content.empty() && file_content.back() != '\n') {
-      file_content += '\n';
-    }
-    file_content += std::format("{} = {}\n", name, value);
-    if (file_handler::write_file(sunshine.config_file.c_str(), file_content) != 0) {
-      BOOST_LOG(warning) << "Failed to persist automatically selected config option '"sv << name << "'"sv;
-      return false;
-    }
-
-    BOOST_LOG(info) << "Automatically selected config option '"sv << name << "' = "sv << value;
-    return true;
-  }
-
-  bool select_all_gamepad_drivers_if_licensed(const bool virtualhid_licensed) {
-    if (!virtualhid_licensed || !input.gamepad_driver.empty() || !persist_config_option_if_missing("gamepad_driver", GAMEPAD_DRIVER_ALL)) {
-      return false;
-    }
-
-    input.gamepad_driver = GAMEPAD_DRIVER_ALL;
-    return true;
   }
 
   /**
@@ -1562,24 +1525,6 @@ namespace config {
   }
 
   /**
-   * @brief Get supported gamepad options.
-   *
-   * @return Platform-supported gamepad backend names accepted by configuration.
-   */
-  const std::vector<std::string_view> &get_supported_gamepad_options() {
-    static const auto gamepads = platf::supported_gamepads(nullptr);
-    static const auto options = []() {
-      std::vector<std::string_view> names;
-      names.reserve(gamepads.size());
-      for (const auto &gamepad : gamepads) {
-        names.emplace_back(gamepad.name);
-      }
-      return names;
-    }();
-    return options;
-  }
-
-  /**
    * @brief Log parsed configuration entries and optionally record them as modified.
    */
   void log_config_settings(const config_map_t &vars, bool save) {
@@ -1876,13 +1821,6 @@ namespace config {
       input.keybindings.emplace(0xA5, 0x5B);
     }
 
-    to = std::numeric_limits<int>::min();
-    int_f(vars, "back_button_timeout", to);
-
-    if (to > std::numeric_limits<int>::min()) {
-      input.back_button_timeout = std::chrono::milliseconds {to};
-    }
-
     double repeat_frequency {0};
     double_between_f(vars, "key_repeat_frequency", repeat_frequency, {0, std::numeric_limits<double>::max()});
 
@@ -1896,27 +1834,8 @@ namespace config {
       input.key_repeat_delay = std::chrono::milliseconds {to};
     }
 
-    string_restricted_f(vars, "gamepad_driver", input.gamepad_driver, {
-                                                                        GAMEPAD_DRIVER_ALL,
-                                                                        GAMEPAD_DRIVER_VIRTUALHID,
-                                                                        GAMEPAD_DRIVER_VIGEMBUS,
-                                                                        GAMEPAD_DRIVER_NONE,
-                                                                      });
-    string_restricted_f(vars, "gamepad"s, input.gamepad, get_supported_gamepad_options());
-#ifdef _WIN32
-    if (input.gamepad_driver == GAMEPAD_DRIVER_VIGEMBUS && input.gamepad != "auto"sv && input.gamepad != "x360"sv && input.gamepad != "ds4"sv) {
-      BOOST_LOG(warning) << "Gamepad type '"sv << input.gamepad << "' is not supported by ViGEmBus; using automatic selection"sv;
-      input.gamepad = "auto";
-    }
-#endif
-    bool_f(vars, "ds4_back_as_touchpad_click", input.ds4_back_as_touchpad_click);
-    bool_f(vars, "motion_as_ds4", input.motion_as_ds4);
-    bool_f(vars, "touchpad_as_ds4", input.touchpad_as_ds4);
-    bool_f(vars, "virtualhid_randomize_mac", input.virtualhid_randomize_mac);
-
     bool_f(vars, "mouse", input.mouse);
     bool_f(vars, "keyboard", input.keyboard);
-    bool_f(vars, "controller", input.controller);
 
     bool_f(vars, "always_send_scancodes", input.always_send_scancodes);
 
