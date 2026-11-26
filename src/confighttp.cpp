@@ -1430,6 +1430,43 @@ namespace confighttp {
     send_response(response, output_tree);
   }
 
+#ifdef SUNSHINE_EMBEDDED
+  /**
+   * @brief Report the number of active streaming sessions to the embedded host.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   */
+  void getSolunaSessions(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    output_tree["sessions"] = rtsp_stream::session_count();
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Stop the embedded host after acknowledging the authenticated request.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   */
+  void shutdownSoluna(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request) || !validate_csrf_token(response, request, get_client_id(request))) {
+      return;
+    }
+
+    send_response(response, nlohmann::json {{"status", true}});
+    response->send([](const SimpleWeb::error_code &error) {
+      if (error) {
+        BOOST_LOG(warning) << "Failed to acknowledge embedded host shutdown: " << error.message();
+      }
+      mail::man->event<bool>(mail::shutdown)->raise(true);
+    });
+  }
+#endif
+
   /**
    * @brief Enable or disable a client.
    * @param response The HTTP response object.
@@ -2557,6 +2594,10 @@ namespace confighttp {
     server.resource["^/api/apps/([0-9]+)$"]["DELETE"] = deleteApp;
     server.resource["^/api/apps/close$"]["POST"] = closeApp;
     server.resource["^/api/clients/list$"]["GET"] = getClients;
+#ifdef SUNSHINE_EMBEDDED
+    server.resource["^/api/soluna/sessions$"]["GET"] = getSolunaSessions;
+    server.resource["^/api/soluna/shutdown$"]["POST"] = shutdownSoluna;
+#endif
     server.resource["^/api/clients/unpair$"]["POST"] = unpair;
     server.resource["^/api/clients/unpair-all$"]["POST"] = unpairAll;
     server.resource["^/api/clients/update$"]["POST"] = updateClient;

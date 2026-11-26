@@ -166,6 +166,11 @@ namespace platf {
   decltype(WlanSetInterface) *fn_WlanSetInterface = nullptr;  ///< Fn wlan set interface.
 
   std::filesystem::path appdata() {
+#ifdef SUNSHINE_EMBEDDED
+    if (const auto *directory = _wgetenv(L"SOLUNA_HOST_DATA_DIR"); directory && *directory) {
+      return std::filesystem::path {directory};
+    }
+#endif
     std::array<WCHAR, MAX_PATH> sunshine_path;
     GetModuleFileNameW(nullptr, sunshine_path.data(), sunshine_path.size());
     return std::filesystem::path {sunshine_path.data()}.remove_filename() / L"config"sv;
